@@ -109,10 +109,9 @@ void print_transistors(Circuit *circuit)
     for(int i = 0; i < circuit->count; i++)
     {
         Transistor *transistor = circuit->transistors[i];
-        printf("%s is powered %d and gate %d \n", transistor->name, transistor->output_wire->power, transistor->state);
+        printf("%s is out p: %d and gate is %s \n", transistor->name, transistor->output_wire->power, transistor->state ? "open" : "closed");
     }
 }
-
 
 void run_circuit(Circuit *circuit)
 {
@@ -121,23 +120,13 @@ void run_circuit(Circuit *circuit)
     print_transistors(circuit); 
 }
 
-int main()
+Wire *create_OR_Gate(Circuit *circuit, Wire *input_wire)
 {
-    Circuit *circuit = malloc(sizeof(*circuit));
-
-    circuit->state = 0;
-    circuit->transistors = NULL; // Settando a NUll ovvero a un puntatore void che punta a 0
-    circuit->count = 0;
-
-    Transistor *transistor1 = create_transistor("In", 0);
     Transistor *transistor2 = create_transistor("A", 1);
     Transistor *transistor3 = create_transistor("B", 1);
-    Transistor *transistor4 = create_transistor("Out", 2);
     
-    update_transistor(transistor1, 1);
-    update_transistor(transistor2, 1);
-    update_transistor(transistor3, 0);
-    update_transistor(transistor4, 1);
+    update_transistor(transistor2, 0);
+    update_transistor(transistor3, 1);
 
     //transistor1->next_transistors = transistor2;
     //transistor2->next_transistors = transistor3;
@@ -150,29 +139,65 @@ int main()
 
     // ----------- Questo che segue rappresenta un or gate ----------- //
 
-    Wire *wire1 = create_wire("1", 1);
-    Wire *wire2 = create_wire("2", 0);
-    Wire *wire3 = create_wire("3", 0);
-    Wire *wire4 = create_wire("4", 0);
-   
-    transistor1->output_wire = wire1;
+    Wire *wire2_3 = create_wire("2_3", 0);
 
-    transistor2->input_wire[0] = wire1;
-    transistor2->output_wire = wire2;
+    transistor2->input_wire[0] = input_wire;
+    transistor2->output_wire = wire2_3;
 
-    transistor3->input_wire[0] = wire1;
-    transistor3->output_wire = wire3;
+    transistor3->input_wire[0] = input_wire;
+    transistor3->output_wire = wire2_3;
 
-    transistor4->input_wire[0] = wire2;
-    transistor4->input_wire[1] = wire3;
-    transistor4->output_wire = wire4;
-
-    append_t_to_c(circuit, transistor1);
     append_t_to_c(circuit, transistor2);
     append_t_to_c(circuit, transistor3);
-    append_t_to_c(circuit, transistor4);
+
+    return wire2_3;
+}
+
+Wire *create_AND_Gate(Circuit *circuit, Wire *input_wire)
+{
+    Transistor *transistor2 = create_transistor("C", 1);
+    Transistor *transistor3 = create_transistor("D", 1);
+    
+    update_transistor(transistor2, 0);
+    update_transistor(transistor3, 1);
+
+    //transistor1->next_transistors = transistor2;
+    //transistor2->next_transistors = transistor3;
+    
+    //append_t_to_t(transistor1, transistor2);
+    //append_t_to_t(transistor1, transistor3);
+
+    //append_t_to_t(transistor2, transistor4);
+    //append_t_to_t(transistor3, transistor4);
+
+    // ----------- Questo che segue rappresenta un or gate ----------- //
+
+    Wire *wire2 = create_wire("2", 0);
+    Wire *wire3 = create_wire("3", 0);
+
+    transistor2->input_wire[0] = input_wire;
+    transistor2->output_wire = wire2;
+
+    transistor3->input_wire[0] = transistor2->output_wire;
+    transistor3->output_wire = wire3;
+
+    append_t_to_c(circuit, transistor2);
+    append_t_to_c(circuit, transistor3);
+
+    return wire3;
+}
+
+int main()
+{
+    Circuit *circuit = malloc(sizeof(*circuit));
+
+    circuit->state = 0;
+    circuit->transistors = NULL; // Setto a NUll, ovvero a un puntatore void che punta a 0
+    circuit->count = 0;
+
+    Wire *input_wire = create_wire("input", 1);
+    Wire *or_output_wire = create_OR_Gate(circuit, input_wire);    
+    Wire *and_output_wire = create_AND_Gate(circuit, or_output_wire);
 
     run_circuit(circuit);
-
-    printf("\nHello world! %d\n", transistor1->state);
 }
