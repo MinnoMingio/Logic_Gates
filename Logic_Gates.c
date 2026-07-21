@@ -11,6 +11,7 @@ typedef struct Wire{
 typedef struct Transistor{
     char *name;
     int state; // if it's closed or open
+    int invert;
     int power; // if it's running electricity
     struct Wire **input_wire;
     struct Wire *output_wire;
@@ -56,9 +57,10 @@ Transistor *create_transistor(char *name, int wires)
     return transistor;
 }
 
-void update_transistor(Transistor *transistor, int state)
+void update_transistor(Transistor *transistor, int state, int invert)
 {
     transistor->state = state;
+    transistor->invert = invert;
 }
 
 void append_t_to_c(Circuit *circuit, Transistor *transistor)
@@ -93,9 +95,9 @@ void update_next_t(Circuit *circuit)
 
         for(int j = 0; j < transistor->count; j++)
         {
-            int current_power = transistor->input_wire[j]->power;
+            int current_power = transistor->input_wire[j]->power + (transistor->invert ? (transistor->input_wire[j]->power ? -1 : 1) : 0);
 
-            if (current_state == 1 && current_power == 1 && transistor->output_wire != NULL)
+            if (current_state + (transistor->invert ? (transistor->state ? -1 : 1) : 0) == 1 && current_power == 1 && transistor->output_wire != NULL)
             {
                 transistor->output_wire->power = 1;
             }
@@ -109,7 +111,7 @@ void print_transistors(Circuit *circuit)
     for(int i = 0; i < circuit->count; i++)
     {
         Transistor *transistor = circuit->transistors[i];
-        printf("%s is out p: %d and gate is %s \n", transistor->name, transistor->output_wire->power, transistor->state ? "open" : "closed");
+        printf("%s wire out p: %d and gate state is %s \n", transistor->name, transistor->output_wire->power, transistor->state ? "open" : "closed");
     }
 }
 
@@ -117,27 +119,16 @@ void run_circuit(Circuit *circuit)
 {
     circuit->state = 1;
     update_next_t(circuit);
-    print_transistors(circuit); 
+    print_transistors(circuit);
 }
 
 Wire *create_OR_Gate(Circuit *circuit, Wire *input_wire)
 {
-    Transistor *transistor2 = create_transistor("A", 1);
-    Transistor *transistor3 = create_transistor("B", 1);
+    Transistor *transistor2 = create_transistor("OR_1", 1);
+    Transistor *transistor3 = create_transistor("OR_2", 1);
     
-    update_transistor(transistor2, 0);
-    update_transistor(transistor3, 1);
-
-    //transistor1->next_transistors = transistor2;
-    //transistor2->next_transistors = transistor3;
-    
-    //append_t_to_t(transistor1, transistor2);
-    //append_t_to_t(transistor1, transistor3);
-
-    //append_t_to_t(transistor2, transistor4);
-    //append_t_to_t(transistor3, transistor4);
-
-    // ----------- Questo che segue rappresenta un or gate ----------- //
+    update_transistor(transistor2, 0, 0);
+    update_transistor(transistor3, 1, 0);
 
     Wire *wire2_3 = create_wire("2_3", 0);
 
@@ -155,22 +146,11 @@ Wire *create_OR_Gate(Circuit *circuit, Wire *input_wire)
 
 Wire *create_AND_Gate(Circuit *circuit, Wire *input_wire)
 {
-    Transistor *transistor2 = create_transistor("C", 1);
-    Transistor *transistor3 = create_transistor("D", 1);
+    Transistor *transistor2 = create_transistor("AND_1", 1);
+    Transistor *transistor3 = create_transistor("AND_2", 1);
     
-    update_transistor(transistor2, 0);
-    update_transistor(transistor3, 1);
-
-    //transistor1->next_transistors = transistor2;
-    //transistor2->next_transistors = transistor3;
-    
-    //append_t_to_t(transistor1, transistor2);
-    //append_t_to_t(transistor1, transistor3);
-
-    //append_t_to_t(transistor2, transistor4);
-    //append_t_to_t(transistor3, transistor4);
-
-    // ----------- Questo che segue rappresenta un or gate ----------- //
+    update_transistor(transistor2, 0, 0);
+    update_transistor(transistor3, 1, 0);
 
     Wire *wire2 = create_wire("2", 0);
     Wire *wire3 = create_wire("3", 0);
@@ -187,6 +167,28 @@ Wire *create_AND_Gate(Circuit *circuit, Wire *input_wire)
     return wire3;
 }
 
+Wire *create_NOT_Gate(Circuit *circuit, Wire *input_wire)
+{
+    Transistor *transistor1 = create_transistor("NOT", 1);
+    
+    update_transistor(transistor1, 0, 1);
+
+    Wire *wire1 = create_wire("1", 0);
+
+    transistor1->input_wire[0] = input_wire;
+    transistor1->output_wire = wire1;
+
+    append_t_to_c(circuit, transistor1);
+
+    return wire1;
+}
+
+Wire *create_NOR_Gate(Circuit *circuit, Wire *input_wire)
+{
+    Wire *or_gate = create_OR_Gate(circuit, input_wire);
+    return create_NOT_Gate(circuit, or_gate);
+}
+
 int main()
 {
     Circuit *circuit = malloc(sizeof(*circuit));
@@ -196,8 +198,14 @@ int main()
     circuit->count = 0;
 
     Wire *input_wire = create_wire("input", 1);
-    Wire *or_output_wire = create_OR_Gate(circuit, input_wire);    
-    Wire *and_output_wire = create_AND_Gate(circuit, or_output_wire);
-
+    Wire *or1_output_wire = create_OR_Gate(circuit, input_wire);    
+    Wire *and_output_wire = create_AND_Gate(circuit, or1_output_wire);
+    Wire *or2_output_wire = create_OR_Gate(circuit, and_output_wire);
+    Wire *not1_output_wire = create_NOT_Gate(circuit, or2_output_wire);
+    Wire *or3_output_wire = create_OR_Gate(circuit, not1_output_wire);
+    Wire *nor_output_wire = create_NOR_Gate(circuit, or3_output_wire);
+    
+    circuit->transistors[2]->state = 1; // Stato di chiusura dell'AND Gate
+    
     run_circuit(circuit);
 }
