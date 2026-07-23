@@ -7,45 +7,64 @@ typedef struct Transistor Transistor;
 typedef struct Wire{
     char *name;
     int power;
+    int next_power;
+    int driven; // 1 == driven by transistor || 0 == always on or always off
 } Wire;
 
 typedef struct Transistor{
     char *name;
     int state; // if it's closed or open
     int invert;
-    int power; // if it's running electricity
     struct Wire **input_wire;
     struct Wire *output_wire;
+    struct Wire *control_wire;
     int count;
 } Transistor;
 
 typedef struct Circuit{
     int state;
     Transistor **transistors;
-    int count;
+    Wire **wires;
+    int transistor_count;
+    int wire_count;
 } Circuit;
 
-Wire *create_wire(char *name, int power)
+void append_wire_to_circuit(Circuit *circuit, Wire *wire)
+{
+    int len = circuit->wire_count + 1;
+    circuit->wires = realloc(circuit->wires, sizeof(Wire*) * len);
+    circuit->wires[len-1] = wire; 
+    circuit->wire_count++;
+}
+
+Wire *initialize_wire(char *name, int power)
 {
     Wire *wire = malloc(sizeof(*wire));
-
     wire->name = name;
     wire->power = power;
-
+    wire->next_power = power;
+    wire->driven = 1;
     return wire;
 }
 
-Wire **create_wire_list(char *name, int power, int count)
+Wire *create_wire(Circuit *circuit, char *name, int power)
 {
-    Wire **wire = malloc(sizeof(*wire) * count);
+    Wire *wire = initialize_wire(name, power);
+    append_wire_to_circuit(circuit, wire);
+    return wire;
+}
+
+Wire **create_wire_list(Circuit *circuit, char *name, int power, int count)
+{
+    Wire **wire_list = malloc(sizeof(*wire_list) * count);
 
     for(int i = 0; i < count; i++){
-        wire[i] = malloc(sizeof(Wire));
-        wire[i]->name = name;
-        wire[i]->power = power;
+        Wire *wire = initialize_wire(name, power);
+        wire_list[i] = wire;
+        append_wire_to_circuit(circuit, wire);
     }
 
-    return wire;
+    return wire_list;
 }
 
 Transistor *create_transistor(char *name, int wires)
@@ -67,6 +86,7 @@ Transistor *create_transistor(char *name, int wires)
     }
 
     transistor->output_wire = NULL;
+    transistor->control_wire = NULL;
 
     return transistor;
 }
@@ -79,12 +99,12 @@ void update_transistor(Transistor *transistor, int state, int invert)
 
 void append_t_to_c(Circuit *circuit, Transistor *transistor)
 {
-    int length = circuit->count;
+    int length = circuit->transistor_count;
 
     circuit->transistors = realloc(circuit->transistors, sizeof(Transistor*) * (length + 1)); 
     circuit->transistors[length] = transistor;
     
-    circuit->count++;
+    circuit->transistor_count++;
 }
 
 /*
@@ -101,10 +121,21 @@ void append_t_to_t(Transistor *from, Transistor *to)
 
 void update_next_t(Circuit *circuit)
 {
-    for(int i = 0; i < circuit->count; i++)
+    for(int w = 0; w < circuit->wire_count; w++)
+    {
+        circuit->wires[w]->next_power = circuit->wires[w]->driven ? 0 : circuit->wires[w]->power;
+    }
+
+    for(int i = 0; i < circuit->transistor_count; i++)
     {
         Transistor *transistor = circuit->transistors[i];
         Wire **input_wires = transistor->input_wire;
+
+        if(transistor->control_wire != NULL)
+        {
+            transistor->state = transistor->control_wire->power;      
+        }        
+
         int current_state = transistor->state + (transistor->invert ? (transistor->state ? -1 : 1) : 0);
 
         for(int j = 0; j < transistor->count; j++)
@@ -113,16 +144,39 @@ void update_next_t(Circuit *circuit)
 
             if (current_state == 1 && current_power == 1 && transistor->output_wire != NULL)
             {
-                transistor->output_wire->power = 1;
+                transistor->output_wire->next_power = 1;
             }
         }
     }
 }
 
+int commit(Circuit *circuit)
+{
+    int changed = 0;
+    for(int i = 0; i < circuit->wire_count; i++)
+    {
+        Wire *wire = circuit->wires[i];
+        if(wire->power != wire->next_power) changed = 1;
+        wire->power = wire->next_power;
+    }
+    return changed;
+}
+
+int run_parallel_circuit(Circuit *circuit, int max_count)
+{
+    for(int i = 0; i < max_count; i++)
+    {
+        update_next_t(circuit);
+        int changed = commit(circuit);
+
+        if(!changed) return i;
+    }
+    return max_count;
+}
 
 void print_transistors(Circuit *circuit)
 {
-    for(int i = 0; i < circuit->count; i++)
+    for(int i = 0; i < circuit->transistor_count; i++)
     {
         Transistor *transistor = circuit->transistors[i];
         printf("%s wire out p: %d and gate state is %s \n", transistor->name, transistor->output_wire->power, transistor->state ? "open" : "closed");
@@ -132,34 +186,34 @@ void print_transistors(Circuit *circuit)
 void run_circuit(Circuit *circuit)
 {
     circuit->state = 1;
-
-    update_next_t(circuit);
+    int tries = run_parallel_circuit(circuit, 100);
+    printf("Tot tries: %d\n", tries);
     print_transistors(circuit);
 }
 
 Transistor *create_OR_Gate(Circuit *circuit, Wire **input_wire)
 {
+    Transistor *transistor1 = create_transistor("OR_1", 1);
     Transistor *transistor2 = create_transistor("OR_1", 1);
-    Transistor *transistor3 = create_transistor("OR_2", 1);
     
+    update_transistor(transistor1, 1, 0);
     update_transistor(transistor2, 1, 0);
-    update_transistor(transistor3, 1, 0);
 
-    Wire *wire2_3 = create_wire("2_3", 0);
+    Wire *wire1_2 = create_wire(circuit, "2_3", 0);
 
-    transistor2->input_wire[0] = input_wire[0];
-    transistor2->output_wire = wire2_3;
+    transistor1->input_wire[0] = input_wire[0];
+    transistor1->output_wire = wire1_2;
 
-    transistor3->input_wire[0] = input_wire[1];
-    transistor3->output_wire = wire2_3;
+    transistor2->input_wire[0] = input_wire[1];
+    transistor2->output_wire = wire1_2;
 
+    append_t_to_c(circuit, transistor1);
     append_t_to_c(circuit, transistor2);
-    append_t_to_c(circuit, transistor3);
 
-    return transistor3;
+    return transistor2;
 }
 
-Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire)
+Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
 {
     Transistor *transistor1 = create_transistor("AND_1", 1);
     Transistor *transistor2 = create_transistor("AND_2", 1);
@@ -167,14 +221,16 @@ Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire)
     update_transistor(transistor1, 1, 0);
     update_transistor(transistor2, 1, 0);
 
-    Wire *mid = create_wire("mid", 0); 
-    Wire *out = create_wire("out", 0);
+    Wire *mid = create_wire(circuit, "mid", 0); 
+    Wire *out = create_wire(circuit, "out", 0);
 
     transistor1->input_wire[0] = input_wire;
     transistor1->output_wire = mid;
+    transistor1->control_wire = a;
 
     transistor2->input_wire[0] = transistor1->output_wire;
     transistor2->output_wire = out;
+    transistor2->control_wire = b;
 
     append_t_to_c(circuit, transistor1);
     append_t_to_c(circuit, transistor2);
@@ -188,7 +244,7 @@ Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire)
     
     update_transistor(transistor1, 0, 1);
 
-    Wire *wire1 = create_wire("1", 0);
+    Wire *wire1 = create_wire(circuit, "1", 0);
 
     transistor1->input_wire[0] = input_wire;
     transistor1->output_wire = wire1;
@@ -249,24 +305,57 @@ int main()
 
     circuit->state = 0;
     circuit->transistors = NULL; // Setto a NUll, ovvero a un puntatore void che punta a 0
-    circuit->count = 0;
+    circuit->transistor_count = 0;
+
+    circuit->wires = NULL;    
+    circuit->wire_count = 0;    
 
     //Wire *wire1 = create_wire("and_wires_1", 1);
     //Transistor *and_gate = create_AND_Gate(circuit, wire1);
     //circuit->transistors[0]->state = 0;
     //circuit->transistors[1]->state = 1;
     //printf("%d\n", and_gate->state);
-    Wire **input_wire = create_wire_list("input", 1, 2);
-    input_wire[0]->power = 0;
+    Wire **input_wire = create_wire_list(circuit, "input", 0, 2);
+    input_wire[0]->driven = 0;
+    input_wire[1]->driven = 0;
+    input_wire[0]->power = 1;
     ////Wire *or1_output_wire = create_OR_Gate(circuit, input_wire);
     ////Wire *and_output_wire = create_AND_Gate(circuit, or1_output_wire);
     ////Wire *or2_output_wire = create_OR_Gate(circuit, and_output_wire);
     ////Wire *not1_output_wire = create_NOT_Gate(circuit, or2_output_wire);
     ////Wire *or3_output_wire = create_OR_Gate(circuit, not1_output_wire);
     ////Wire *nor_output_wire = create_NOR_Gate(circuit, or3_output_wire);
-    Transistor *xor = create_XOR_Gate(circuit, input_wire);
+    //Transistor *xor = create_XOR_Gate(circuit, input_wire);
+     // 1. Creiamo un cavo d'ingresso indipendente con valore 0
+    //Wire *loop_wire = create_wire(circuit, "loop_wire", 0);
+    //loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
 
-    //circuit->transistors[2]->state = 0; // Stato di chiusura dell'AND Gate
-    
+    // 2. Creiamo una porta NOT che legge da loop_wire e scrive su loop_wire!
+    //Transistor *not_gate = create_NOT_Gate(circuit, loop_wire);
+
+    // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
+    //not_gate->output_wire = loop_wire; 
+    // Sorgente di alimentazione sempre attiva (VCC)
+    Wire *vcc = create_wire(circuit, "VCC", 1);
+    vcc->driven = 0;
+
+    // Ingressi del circuito: A = 1, B = 1 (1 + 1 = 2, in binario: Sum=0, Carry=1)
+    Wire *a = create_wire(circuit, "A", 1); a->driven = 0;
+    Wire *b = create_wire(circuit, "B", 0); b->driven = 0;
+
+    // Preparazione array fili per le porte a 2 ingressi
+    Wire **inputs = malloc(sizeof(Wire*) * 2);
+    inputs[0] = a;
+    inputs[1] = b;
+
+    // 1. Somma: XOR tra A e B
+    Transistor *sum_gate = create_XOR_Gate(circuit, inputs);
+
+    // 2. Riporto: AND tra A e B (alimentata da VCC, controllata da A e B)
+    Transistor *carry_gate = create_AND_Gate(circuit, vcc, a, b);
+
+    free(inputs);
+
     run_circuit(circuit);
+    return 0;
 }
