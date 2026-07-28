@@ -1,6 +1,9 @@
 // FAI UN PROGRAMMA FIGO CON MMAP (MAGARI FILE .txt e .pdf e .exe)
 #include<stdio.h>
 #include<stdlib.h>
+#include<unistd.h>
+#include<string.h>
+#include<ctype.h>
 
 typedef struct Transistor Transistor;
 
@@ -260,6 +263,12 @@ Transistor *create_NOR_Gate(Circuit *circuit, Wire **input_wire)
     return create_NOT_Gate(circuit, or_gate->output_wire);
 }
 
+Transistor *create_NAND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
+{
+    Transistor *and_gate = create_AND_Gate(circuit, input_wire, a, b);
+    return create_NOT_Gate(circuit, and_gate->output_wire);
+}
+
 Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
 {
     //quindi prende i due segnali (0,0) o (1,1) e in pratica (0, 0)
@@ -299,6 +308,41 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
     return xor;
 }
 
+char **parse(char *txt)
+{
+    char *token = txt;
+    char *final_token;
+    char **final_string = NULL;
+
+    int count = 0;
+    while(token[0] != '\0')
+    {
+        while(isspace(token[0])) token++;
+
+        if(token[0] == '\0') break; 
+
+        char *start = token; 
+
+        while(isgraph(token[0])) token++;
+
+        char *end = token;
+
+        int length = end - start;
+        final_token = malloc(length + 1);
+        //memset(final_token, start, end - start);
+        memcpy(final_token, start, length);
+        final_token[length] = '\0';
+
+        final_string = realloc(final_string, sizeof(char*) * (count+2));
+        final_string[count] = final_token;
+        printf("%s\n", final_token);
+        count++;
+    }
+    final_string[count] = NULL;
+    printf("\n\nend");
+    return final_string;
+}
+
 int main()
 {
     Circuit *circuit = malloc(sizeof(*circuit));
@@ -318,7 +362,7 @@ int main()
     Wire **input_wire = create_wire_list(circuit, "input", 0, 2);
     input_wire[0]->driven = 0;
     input_wire[1]->driven = 0;
-    input_wire[0]->power = 1;
+    input_wire[0]->power  = 1;
     ////Wire *or1_output_wire = create_OR_Gate(circuit, input_wire);
     ////Wire *and_output_wire = create_AND_Gate(circuit, or1_output_wire);
     ////Wire *or2_output_wire = create_OR_Gate(circuit, and_output_wire);
@@ -336,12 +380,20 @@ int main()
     // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
     //not_gate->output_wire = loop_wire; 
     // Sorgente di alimentazione sempre attiva (VCC)
+
+
+    // ---------- HALF ADDER ---------- //
     Wire *vcc = create_wire(circuit, "VCC", 1);
     vcc->driven = 0;
 
+    char numeri[6];
+    fgets(numeri, sizeof(numeri), stdin);
+    int input_a = numeri[0] - 48; // oppure - '0'
+    int input_b = numeri[2] - 48;
+
     // Ingressi del circuito: A = 1, B = 1 (1 + 1 = 2, in binario: Sum=0, Carry=1)
-    Wire *a = create_wire(circuit, "A", 1); a->driven = 0;
-    Wire *b = create_wire(circuit, "B", 0); b->driven = 0;
+    Wire *a = create_wire(circuit, "A", input_a); a->driven = 0;
+    Wire *b = create_wire(circuit, "B", input_b); b->driven = 0;
 
     // Preparazione array fili per le porte a 2 ingressi
     Wire **inputs = malloc(sizeof(Wire*) * 2);
@@ -355,7 +407,10 @@ int main()
     Transistor *carry_gate = create_AND_Gate(circuit, vcc, a, b);
 
     free(inputs);
-
     run_circuit(circuit);
+
+    printf("\n\n\n");
+    char **string_array = parse("HI! This is a test to see how the parse works");
+    printf("\n%s", string_array[2]);
     return 0;
 }
