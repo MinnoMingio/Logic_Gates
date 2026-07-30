@@ -6,6 +6,12 @@
 #include<ctype.h>
 
 typedef struct Transistor Transistor;
+//hello
+struct RowParser
+{
+    int row;
+    char **content;
+};
 
 typedef struct Wire{
     char *name;
@@ -165,18 +171,6 @@ int commit(Circuit *circuit)
     return changed;
 }
 
-int run_parallel_circuit(Circuit *circuit, int max_count)
-{
-    for(int i = 0; i < max_count; i++)
-    {
-        update_next_t(circuit);
-        int changed = commit(circuit);
-
-        if(!changed) return i;
-    }
-    return max_count;
-}
-
 void print_transistors(Circuit *circuit)
 {
     for(int i = 0; i < circuit->transistor_count; i++)
@@ -186,12 +180,25 @@ void print_transistors(Circuit *circuit)
     }
 }
 
+int run_parallel_circuit(Circuit *circuit, int max_count)
+{
+    for(int i = 0; i < max_count; i++)
+    {
+        update_next_t(circuit);
+        int changed = commit(circuit);
+
+        printf("Cicle %d:\n", i+1);
+        print_transistors(circuit);
+        if(!changed) return i;
+    }
+    return max_count;
+}
+
 void run_circuit(Circuit *circuit)
 {
     circuit->state = 1;
     int tries = run_parallel_circuit(circuit, 100);
     printf("Tot tries: %d\n", tries);
-    print_transistors(circuit);
 }
 
 Transistor *create_OR_Gate(Circuit *circuit, Wire **input_wire)
@@ -343,6 +350,19 @@ char **parse(char *txt)
     return final_string;
 }
 
+void fuck_you(char **string_list)
+{
+    char *current = string_list[0];
+    int count = 0;
+    while(current != NULL)
+    {
+        
+
+        current = string_list[count+1];
+        count++;
+    }
+}
+
 int main()
 {
     Circuit *circuit = malloc(sizeof(*circuit));
@@ -370,19 +390,22 @@ int main()
     ////Wire *or3_output_wire = create_OR_Gate(circuit, not1_output_wire);
     ////Wire *nor_output_wire = create_NOR_Gate(circuit, or3_output_wire);
     //Transistor *xor = create_XOR_Gate(circuit, input_wire);
-     // 1. Creiamo un cavo d'ingresso indipendente con valore 0
-    //Wire *loop_wire = create_wire(circuit, "loop_wire", 0);
-    //loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
+
+
+    // 1. Creiamo un cavo d'ingresso indipendente con valore 0
+    Wire *loop_wire = create_wire(circuit, "loop_wire", 0);
+    loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
 
     // 2. Creiamo una porta NOT che legge da loop_wire e scrive su loop_wire!
-    //Transistor *not_gate = create_NOT_Gate(circuit, loop_wire);
+    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire);
 
     // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
-    //not_gate->output_wire = loop_wire; 
+    not_gate->output_wire = loop_wire; 
     // Sorgente di alimentazione sempre attiva (VCC)
 
 
     // ---------- HALF ADDER ---------- //
+    /*
     Wire *vcc = create_wire(circuit, "VCC", 1);
     vcc->driven = 0;
 
@@ -407,10 +430,13 @@ int main()
     Transistor *carry_gate = create_AND_Gate(circuit, vcc, a, b);
 
     free(inputs);
+    */
+
     run_circuit(circuit);
 
     printf("\n\n\n");
     char **string_array = parse("HI! This is a test to see how the parse works");
-    printf("\n%s", string_array[2]);
+    printf("\n%s", string_array[1]);
+    fuck_you(string_array);
     return 0;
 }
