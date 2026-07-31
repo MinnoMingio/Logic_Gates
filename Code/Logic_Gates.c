@@ -5,13 +5,31 @@
 #include<string.h>
 #include<ctype.h>
 
+typedef struct Circuit Circuit;
 typedef struct Transistor Transistor;
+typedef struct Wire Wire;
+
 //hello
-struct RowParser
+
+typedef Transistor* (*TransFunc)(Circuit *circuit, Wire **wires, int count);
+
+typedef struct GateFunction 
+{
+    char *name;
+    TransFunc func;
+} GateFunction;
+
+typedef struct FunctionTable
+{
+    GateFunction **funcs;
+    int funcs_count;
+} FunctionTable;
+
+typedef struct RowParser
 {
     int row;
     char **content;
-};
+} RowParser;
 
 typedef struct Wire{
     char *name;
@@ -32,11 +50,27 @@ typedef struct Transistor{
 
 typedef struct Circuit{
     int state;
+    FunctionTable *functionTable;
     Transistor **transistors;
     Wire **wires;
     int transistor_count;
     int wire_count;
 } Circuit;
+
+void append_func_to_table(Circuit *circuit, char *name, TransFunc func)
+{
+    int len = circuit->functionTable->funcs_count + 1;
+
+    GateFunction ***function_list = &(circuit->functionTable->funcs);
+
+    *function_list = realloc(*function_list, sizeof(GateFunction*) * (len));
+
+    *(function_list)[len-1] = malloc(sizeof(GateFunction));
+    (*function_list)[len-1]->name = strdup(name);
+    (*function_list)[len-1]->func = func;
+
+    circuit->functionTable->funcs_count++;
+}
 
 void append_wire_to_circuit(Circuit *circuit, Wire *wire)
 {
@@ -315,104 +349,103 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
     return xor;
 }
 
-char **parse(char *txt)
+RowParser **parse(char *txt)
 {
+    if(txt == NULL || txt[0] == '\0') return NULL;
+
     char *token = txt;
     char *final_token;
-    char **final_string = NULL;
+    RowParser **rows = NULL;
 
-    int count = 0;
+    int row_count = 0;
+    int element_count = 0;
     while(token[0] != '\0')
     {
-        while(isspace(token[0])) token++;
+        element_count = 0;
 
-        if(token[0] == '\0') break; 
+        rows = realloc(rows, sizeof(RowParser*) * (row_count + 2));
+        rows[row_count] = malloc(sizeof(RowParser));
+        rows[row_count]->row = row_count+1;
+        rows[row_count]->content = NULL;     
 
-        char *start = token; 
+        while(token[0] != '\n' && token[0] != '\0')
+        {
+            while(isspace(token[0]) && token[0] != '\n') token++;
 
-        while(isgraph(token[0])) token++;
+            if(token[0] == '\0') break;
+            if(token[0] == '\n') break;
 
-        char *end = token;
+            char *start = token; 
 
-        int length = end - start;
-        final_token = malloc(length + 1);
-        //memset(final_token, start, end - start);
-        memcpy(final_token, start, length);
-        final_token[length] = '\0';
+            while(isgraph(token[0])) token++;
 
-        final_string = realloc(final_string, sizeof(char*) * (count+2));
-        final_string[count] = final_token;
-        printf("%s\n", final_token);
-        count++;
+            char *end = token;
+
+            int length = end - start;
+            final_token = malloc(length + 1);
+            //memset(final_token, start, end - start);
+            memcpy(final_token, start, length);
+            final_token[length] = '\0';
+
+            //final_string = realloc(final_string, sizeof(char*) * (count+2));
+            //final_string[count] = final_token;
+            rows[row_count]->content = realloc(rows[row_count]->content, sizeof(char*) * (element_count+2));
+            rows[row_count]->row = row_count+1;
+            rows[row_count]->content[element_count] = final_token;
+            rows[row_count]->content[element_count+1] = NULL; // NULL terminator
+
+            printf("%s\n", rows[row_count]->content[element_count]);
+            element_count++;
+        }
+        if(token[0] == '\n') token++;
+        row_count++;
     }
-    final_string[count] = NULL;
+    //final_string[count] = NULL;
+    rows[row_count] = NULL;
     printf("\n\nend");
-    return final_string;
+    return rows;
 }
 
-void fuck_you(char **string_list)
+void fuck_you(Circuit *circuit, RowParser **string_list)
 {
-    char *current = string_list[0];
     int count = 0;
-    while(current != NULL)
+    int row = 0;
+    
+    while(string_list[row] != NULL)
     {
-        
+        count = 0;
+        char *currentToken = string_list[row]->content[count];
+        TransFunc currentFunc = NULL;
 
-        current = string_list[count+1];
-        count++;
+        while(currentToken != NULL)
+        {
+            for (int i = 0; i < circuit->functionTable->funcs_count; i++)
+            {
+                if (strcmp(currentToken, circuit->functionTable->funcs[i]->name) == 0)
+                {
+                    printf("TROVATA!\n");
+                    currentFunc = circuit->functionTable->funcs[i]->func;
+                }
+            }
+
+            currentToken = string_list[row]->content[count+1];
+            count++;
+        }
+        currentFunc(circuit, NULL, 0);
+        row++;
     }
 }
 
-int main()
+void create_Half_Adder(Circuit *circuit, int input_a, int input_b)
 {
-    Circuit *circuit = malloc(sizeof(*circuit));
-
-    circuit->state = 0;
-    circuit->transistors = NULL; // Setto a NUll, ovvero a un puntatore void che punta a 0
-    circuit->transistor_count = 0;
-
-    circuit->wires = NULL;    
-    circuit->wire_count = 0;    
-
-    //Wire *wire1 = create_wire("and_wires_1", 1);
-    //Transistor *and_gate = create_AND_Gate(circuit, wire1);
-    //circuit->transistors[0]->state = 0;
-    //circuit->transistors[1]->state = 1;
-    //printf("%d\n", and_gate->state);
-    Wire **input_wire = create_wire_list(circuit, "input", 0, 2);
-    input_wire[0]->driven = 0;
-    input_wire[1]->driven = 0;
-    input_wire[0]->power  = 1;
-    ////Wire *or1_output_wire = create_OR_Gate(circuit, input_wire);
-    ////Wire *and_output_wire = create_AND_Gate(circuit, or1_output_wire);
-    ////Wire *or2_output_wire = create_OR_Gate(circuit, and_output_wire);
-    ////Wire *not1_output_wire = create_NOT_Gate(circuit, or2_output_wire);
-    ////Wire *or3_output_wire = create_OR_Gate(circuit, not1_output_wire);
-    ////Wire *nor_output_wire = create_NOR_Gate(circuit, or3_output_wire);
-    //Transistor *xor = create_XOR_Gate(circuit, input_wire);
-
-
-    // 1. Creiamo un cavo d'ingresso indipendente con valore 0
-    Wire *loop_wire = create_wire(circuit, "loop_wire", 0);
-    loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
-
-    // 2. Creiamo una porta NOT che legge da loop_wire e scrive su loop_wire!
-    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire);
-
-    // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
-    not_gate->output_wire = loop_wire; 
-    // Sorgente di alimentazione sempre attiva (VCC)
-
-
     // ---------- HALF ADDER ---------- //
-    /*
     Wire *vcc = create_wire(circuit, "VCC", 1);
     vcc->driven = 0;
 
-    char numeri[6];
-    fgets(numeri, sizeof(numeri), stdin);
-    int input_a = numeri[0] - 48; // oppure - '0'
-    int input_b = numeri[2] - 48;
+    //char numeri[6];
+    //fgets(numeri, sizeof(numeri), stdin);
+    //int input_a = numeri[0] - 48; // oppure - '0'
+    //int input_b = numeri[2] - 48;
 
     // Ingressi del circuito: A = 1, B = 1 (1 + 1 = 2, in binario: Sum=0, Carry=1)
     Wire *a = create_wire(circuit, "A", input_a); a->driven = 0;
@@ -429,14 +462,49 @@ int main()
     // 2. Riporto: AND tra A e B (alimentata da VCC, controllata da A e B)
     Transistor *carry_gate = create_AND_Gate(circuit, vcc, a, b);
 
-    free(inputs);
-    */
+    //free(inputs);
+}
+
+void create_Clock_Cicle(Circuit *circuit)
+{
+    // 1. Creiamo un cavo d'ingresso indipendente con valore 0
+    Wire *loop_wire = create_wire(circuit, "loop_wire", 0);
+    loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
+
+    // 2. Creiamo una porta NOT che legge da loop_wire e scrive su loop_wire!
+    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire);
+
+    // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
+    not_gate->output_wire = loop_wire; 
+    // Sorgente di alimentazione sempre attiva (VCC)
+}
+
+Transistor *test(Circuit *circuit, Wire **wires, int count)
+{
+    printf("Yoooh braaaah!");
+}
+
+int main()
+{
+    Circuit *circuit = malloc(sizeof(*circuit));
+
+    circuit->state = 0;
+    circuit->transistors = NULL; // Setto a NUll, ovvero a un puntatore void che punta a 0
+    circuit->transistor_count = 0;
+
+    circuit->wires = NULL;    
+    circuit->wire_count = 0;    
+    circuit->functionTable = malloc(sizeof(FunctionTable));
+    circuit->functionTable->funcs = NULL;
+    circuit->functionTable->funcs_count = 0;
+    append_func_to_table(circuit, "INPUT", test);
 
     run_circuit(circuit);
 
     printf("\n\n\n");
-    char **string_array = parse("HI! This is a test to see how the parse works");
-    printf("\n%s", string_array[1]);
-    fuck_you(string_array);
+    RowParser **string_list = parse("HI! INPUT This is a test to see how the parse works\nciao\nFuck You!");
+    printf("\n%d\n", string_list[2]->row);
+    printf("\n%s\n", string_list[2]->content[0]);
+    fuck_you(circuit, string_list);
     return 0;
 }
