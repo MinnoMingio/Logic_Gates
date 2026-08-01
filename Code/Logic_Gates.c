@@ -9,14 +9,13 @@ typedef struct Circuit Circuit;
 typedef struct Transistor Transistor;
 typedef struct Wire Wire;
 
-//hello
-
-typedef Transistor* (*TransFunc)(Circuit *circuit, Wire **wires, int count);
+typedef void* (*CircuitFunc)(Circuit *circuit, char **param, int count);
 
 typedef struct GateFunction 
 {
     char *name;
-    TransFunc func;
+    int param_count;
+    CircuitFunc func;
 } GateFunction;
 
 typedef struct FunctionTable
@@ -57,7 +56,7 @@ typedef struct Circuit{
     int wire_count;
 } Circuit;
 
-void append_func_to_table(Circuit *circuit, char *name, TransFunc func)
+void append_func_to_table(Circuit *circuit, char *name, int param_count, CircuitFunc func)
 {
     int len = circuit->functionTable->funcs_count + 1;
 
@@ -67,6 +66,7 @@ void append_func_to_table(Circuit *circuit, char *name, TransFunc func)
 
     (*function_list)[len-1] = malloc(sizeof(GateFunction));
     (*function_list)[len-1]->name = strdup(name);
+    (*function_list)[len-1]->param_count = param_count;
     (*function_list)[len-1]->func = func;
 
     circuit->functionTable->funcs_count++;
@@ -216,6 +216,7 @@ void print_transistors(Circuit *circuit)
 
 int run_parallel_circuit(Circuit *circuit, int max_count)
 {
+    printf("\n");
     for(int i = 0; i < max_count; i++)
     {
         update_next_t(circuit);
@@ -349,94 +350,6 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
     return xor;
 }
 
-RowParser **parse(char *txt)
-{
-    if(txt == NULL || txt[0] == '\0') return NULL;
-
-    char *token = txt;
-    char *final_token;
-    RowParser **rows = NULL;
-
-    int row_count = 0;
-    int element_count = 0;
-    while(token[0] != '\0')
-    {
-        element_count = 0;
-
-        rows = realloc(rows, sizeof(RowParser*) * (row_count + 2));
-        rows[row_count] = malloc(sizeof(RowParser));
-        rows[row_count]->row = row_count+1;
-        rows[row_count]->content = NULL;     
-
-        while(token[0] != '\n' && token[0] != '\0')
-        {
-            while(isspace(token[0]) && token[0] != '\n') token++;
-
-            if(token[0] == '\0') break;
-            if(token[0] == '\n') break;
-
-            char *start = token; 
-
-            while(isgraph(token[0])) token++;
-
-            char *end = token;
-
-            int length = end - start;
-            final_token = malloc(length + 1);
-            //memset(final_token, start, end - start);
-            memcpy(final_token, start, length);
-            final_token[length] = '\0';
-
-            //final_string = realloc(final_string, sizeof(char*) * (count+2));
-            //final_string[count] = final_token;
-            rows[row_count]->content = realloc(rows[row_count]->content, sizeof(char*) * (element_count+2));
-            rows[row_count]->row = row_count+1;
-            rows[row_count]->content[element_count] = final_token;
-            rows[row_count]->content[element_count+1] = NULL; // NULL terminator
-
-            printf("%s\n", rows[row_count]->content[element_count]);
-            element_count++;
-        }
-        if(token[0] == '\n') token++;
-        row_count++;
-    }
-    //final_string[count] = NULL;
-    rows[row_count] = NULL;
-    printf("\n\nend");
-    return rows;
-}
-
-void fuck_you(Circuit *circuit, RowParser **string_list)
-{
-    int count = 0;
-    int row = 0;
-    
-    while(string_list[row] != NULL)
-    {
-        count = 0;
-        char *currentToken = string_list[row]->content[count];
-        TransFunc currentFunc = NULL;
-
-        while(currentToken != NULL)
-        {
-            for (int i = 0; i < circuit->functionTable->funcs_count; i++)
-            {
-                if (strcmp(currentToken, circuit->functionTable->funcs[i]->name) == 0)
-                {
-                    printf("TROVATA!\n");
-                    currentFunc = circuit->functionTable->funcs[i]->func;
-                }
-            }
-
-            currentToken = string_list[row]->content[count+1];
-            count++;
-        }
-        if(currentFunc != NULL)
-        currentFunc(circuit, NULL, 0);
-        row++;
-    }
-}
-
 void create_Half_Adder(Circuit *circuit, int input_a, int input_b)
 {
     // ---------- HALF ADDER ---------- //
@@ -480,9 +393,145 @@ void create_Clock_Cicle(Circuit *circuit)
     // Sorgente di alimentazione sempre attiva (VCC)
 }
 
-Transistor *test(Circuit *circuit, Wire **wires, int count)
+RowParser **parse(char *txt)
 {
-    printf("Yoooh braaaah!");
+    if(txt == NULL || txt[0] == '\0') return NULL;
+
+    char *token = txt;
+    char *final_token;
+    RowParser **rows = NULL;
+
+    int row_count = 0;
+    int element_count = 0;
+    while(token[0] != '\0')
+    {
+        element_count = 0;
+
+        rows = realloc(rows, sizeof(RowParser*) * (row_count + 2));
+        rows[row_count] = malloc(sizeof(RowParser));
+        rows[row_count]->row = row_count+1;
+        rows[row_count]->content = NULL;     
+
+        while(token[0] != ';' && token[0] != '\n' && token[0] != '\0')
+        {
+            while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
+
+            if(token[0] == '\0') break;
+            if(token[0] == '\n') break;
+            if(token[0] == ';') break;
+
+            char *start = token; 
+
+            while(isgraph(token[0]) && token[0] != ';') token++;
+
+            char *end = token;
+
+            int length = end - start;
+            final_token = malloc(length + 1);
+            //memset(final_token, start, end - start);
+            memcpy(final_token, start, length);
+            final_token[length] = '\0';
+
+            //final_string = realloc(final_string, sizeof(char*) * (count+2));
+            //final_string[count] = final_token;
+            rows[row_count]->content = realloc(rows[row_count]->content, sizeof(char*) * (element_count+2));
+            rows[row_count]->row = row_count+1;
+            rows[row_count]->content[element_count] = final_token;
+            rows[row_count]->content[element_count+1] = NULL; // NULL terminator
+
+            printf("%s\n", rows[row_count]->content[element_count]);
+            element_count++;
+        }
+        if(token[0] == ';' || token[0] == '\n') token++;
+        if(token[0] != ';' && element_count > 0) row_count++;
+        printf("\n");
+    }
+    //final_string[count] = NULL;
+    rows[row_count] = NULL;
+    printf("\n\nend");
+    return rows;
+}
+
+void execute_parsing(Circuit *circuit, RowParser **string_list)
+{
+    int count = 0;
+    int row = 0;
+
+    while(string_list[row] != NULL)
+    {
+        count = 0;
+        char *currentToken = string_list[row]->content[count];
+        char **param = NULL;
+        int param_size = 0;
+        GateFunction *currentFunc = NULL;
+
+        int found = 0;
+        while(currentToken != NULL)
+        {
+            if(!found)
+            {
+                printf("\n");
+                for (int i = 0; i < circuit->functionTable->funcs_count; i++)
+                {
+                    if (strcmp(currentToken, circuit->functionTable->funcs[i]->name) == 0)
+                    {
+                        printf("TROVATA! (%s): ", circuit->functionTable->funcs[i]->name);
+                        currentFunc = circuit->functionTable->funcs[i];
+                        param = malloc(sizeof(char *) * (currentFunc->param_count + 1));
+                        found = 1;
+                    } 
+                }
+            }
+            else if(found)
+            {
+                if(currentToken != NULL)
+                {
+                    param_size++;
+                    printf("%s - ", currentToken);
+                    param[param_size - 1] = currentToken;
+                    param[param_size] = NULL;
+                }
+            }
+
+            currentToken = string_list[row]->content[count+1];
+            count++;
+        }
+         
+        if(currentFunc != NULL) currentFunc->func(circuit, param, param_size);
+        row++;
+    }
+}
+
+void *And_Wrap(Circuit *circuit, char **param, int count)
+{
+    Wire *input_wire = create_wire(circuit, param[0], 0);
+    Wire *a_wire = create_wire(circuit, param[1], 0);
+    Wire *b_wire = create_wire(circuit, param[2], 0);
+
+    Transistor *and_gate = create_AND_Gate(circuit, input_wire, a_wire, b_wire);
+}
+
+void *Update_Wire_Wrap(Circuit *circuit, char **param, int count)
+{
+    Wire *wire = NULL;
+    int power = 0;
+    int driven = 0;
+    printf(" AIAIAIAIAI \n%s", param[3]);
+    for(int i = 0; i < circuit->wire_count; i++)
+    {
+        if(strcmp(circuit->wires[i]->name, param[0]) == 0)
+        {
+            wire = circuit->wires[i];
+            if(param[1] != NULL) {power = atoi(param[1]);} else {power = wire->power;}
+            if(param[2] != NULL) {driven = atoi(param[2]);} else {driven = wire->driven;}
+        }
+    }
+
+    if(wire != NULL)
+    {
+        wire->driven = driven;
+        wire->power = power;
+    }
 }
 
 int main()
@@ -498,14 +547,17 @@ int main()
     circuit->functionTable = malloc(sizeof(FunctionTable));
     circuit->functionTable->funcs = NULL;
     circuit->functionTable->funcs_count = 0;
-    append_func_to_table(circuit, "INPUT", test);
-
-    run_circuit(circuit);
+    append_func_to_table(circuit, "AND", 3, And_Wrap);
+    append_func_to_table(circuit, "UPDATE", 3, Update_Wire_Wrap);
 
     printf("\n\n\n");
-    RowParser **string_list = parse("HI! INPUT This is a test to see how the parse works\nciao\nFuck You!");
-    printf("\n%d\n", string_list[2]->row);
-    printf("\n%s\n", string_list[2]->content[0]);
-    fuck_you(circuit, string_list);
+    RowParser **string_list = parse("AND vcc a b; UPDATE vcc 1 0; UPDATE a 1 0; UPDATE b 1 0;");
+    printf("\n%d\n", string_list[0]->row);
+    printf("\n%s\n", string_list[0]->content[2]);
+
+    printf("ASD");
+    execute_parsing(circuit, string_list);
+
+    run_circuit(circuit);
     return 0;
 }
