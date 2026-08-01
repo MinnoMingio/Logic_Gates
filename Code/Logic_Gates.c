@@ -65,7 +65,7 @@ void append_func_to_table(Circuit *circuit, char *name, TransFunc func)
 
     *function_list = realloc(*function_list, sizeof(GateFunction*) * (len));
 
-    *(function_list)[len-1] = malloc(sizeof(GateFunction));
+    (*function_list)[len-1] = malloc(sizeof(GateFunction));
     (*function_list)[len-1]->name = strdup(name);
     (*function_list)[len-1]->func = func;
 
@@ -431,6 +431,7 @@ void fuck_you(Circuit *circuit, RowParser **string_list)
             currentToken = string_list[row]->content[count+1];
             count++;
         }
+        if(currentFunc != NULL)
         currentFunc(circuit, NULL, 0);
         row++;
     }
