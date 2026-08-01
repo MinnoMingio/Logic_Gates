@@ -235,7 +235,7 @@ void run_circuit(Circuit *circuit)
     printf("Tot tries: %d\n", tries);
 }
 
-Transistor *create_OR_Gate(Circuit *circuit, Wire **input_wire)
+Transistor *create_OR_Gate(Circuit *circuit, Wire **wires, int count)
 {
     Transistor *transistor1 = create_transistor("OR_1", 1);
     Transistor *transistor2 = create_transistor("OR_1", 1);
@@ -245,10 +245,10 @@ Transistor *create_OR_Gate(Circuit *circuit, Wire **input_wire)
 
     Wire *wire1_2 = create_wire(circuit, "2_3", 0);
 
-    transistor1->input_wire[0] = input_wire[0];
+    transistor1->input_wire[0] = wires[0];
     transistor1->output_wire = wire1_2;
 
-    transistor2->input_wire[0] = input_wire[1];
+    transistor2->input_wire[0] = wires[1];
     transistor2->output_wire = wire1_2;
 
     append_t_to_c(circuit, transistor1);
@@ -257,7 +257,7 @@ Transistor *create_OR_Gate(Circuit *circuit, Wire **input_wire)
     return transistor2;
 }
 
-Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
+Transistor *create_AND_Gate(Circuit *circuit, Wire **wires, int count)
 {
     Transistor *transistor1 = create_transistor("AND_1", 1);
     Transistor *transistor2 = create_transistor("AND_2", 1);
@@ -268,13 +268,13 @@ Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b
     Wire *mid = create_wire(circuit, "mid", 0); 
     Wire *out = create_wire(circuit, "out", 0);
 
-    transistor1->input_wire[0] = input_wire;
+    transistor1->input_wire[0] = wires[0]; // INPUT WIRE
     transistor1->output_wire = mid;
-    transistor1->control_wire = a;
+    transistor1->control_wire = wires[1]; //A
 
-    transistor2->input_wire[0] = transistor1->output_wire;
+    transistor2->input_wire[0] = transistor1->output_wire; //FOLLOWING WIRE
     transistor2->output_wire = out;
-    transistor2->control_wire = b;
+    transistor2->control_wire = wires[2]; //B
 
     append_t_to_c(circuit, transistor1);
     append_t_to_c(circuit, transistor2);
@@ -282,7 +282,7 @@ Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b
     return transistor2;
 }
 
-Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire)
+Transistor *create_NOT_Gate(Circuit *circuit, Wire **wires, int count)
 {
     Transistor *transistor1 = create_transistor("NOT", 1);
     
@@ -290,7 +290,7 @@ Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire)
 
     Wire *wire1 = create_wire(circuit, "1", 0);
 
-    transistor1->input_wire[0] = input_wire;
+    transistor1->input_wire[0] = wires[0];
     transistor1->output_wire = wire1;
 
     append_t_to_c(circuit, transistor1);
@@ -298,19 +298,24 @@ Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire)
     return transistor1;
 }
 
-Transistor *create_NOR_Gate(Circuit *circuit, Wire **input_wire)
+Transistor *create_NOR_Gate(Circuit *circuit, Wire **wires, int count)
 {
-    Transistor *or_gate = create_OR_Gate(circuit, input_wire);
-    return create_NOT_Gate(circuit, or_gate->output_wire);
+    Transistor *or_gate = create_OR_Gate(circuit, wires, 1);
+    return create_NOT_Gate(circuit, or_gate->output_wire, 1);
 }
 
-Transistor *create_NAND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
+Transistor *create_NAND_Gate(Circuit *circuit, Wire **wires, int count)
 {
-    Transistor *and_gate = create_AND_Gate(circuit, input_wire, a, b);
-    return create_NOT_Gate(circuit, and_gate->output_wire);
+    Wire **wire_list = create_wire_list(circuit, "and", 0, 3);
+    wire_list[0] = wires[0];
+    wire_list[1] = wires[1];
+    wire_list[2] = wires[2];
+
+    Transistor *and_gate = create_AND_Gate(circuit, wire_list, 3);
+    return create_NOT_Gate(circuit, and_gate->output_wire, 1);
 }
 
-Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
+Transistor *create_XOR_Gate(Circuit *circuit, Wire **wires, int count)
 {
     //quindi prende i due segnali (0,0) o (1,1) e in pratica (0, 0)
     //restituisce 1 mentre (1,1) restituisce zero. L'ultimo NOR
@@ -320,20 +325,22 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
     //comunque zero e allora all'ultimo NOR arrivano due zeri (0,0) e restituirà 1.
     //Quindi se sono diversi restituisce 1 mentre se sono uguali restituisce zero.
 
-    Wire *a = input_wire[0];
-    Wire *b = input_wire[1];
+    Wire **a = create_wire_list(circuit, "a", 0, 1);
+    a[0] = wires[0];
+    Wire **b = create_wire_list(circuit, "b", 0, 1);
+    b[0] = wires[1];
     // Passo 1: Invertiamo i singoli segnali
-    Transistor *not_a_wire = create_NOT_Gate(circuit, a);
-    Transistor *not_b_wire = create_NOT_Gate(circuit, b);
+    Transistor *not_a_wire = create_NOT_Gate(circuit, a, 1);
+    Transistor *not_b_wire = create_NOT_Gate(circuit, b, 1);
 
     // Passo 2: NOR tra A e B (è vero solo se A=0 e B=0)
-    Transistor *nor_ab = create_NOR_Gate(circuit, input_wire);
+    Transistor *nor_ab = create_NOR_Gate(circuit, wires, 2);
     
     // Passo 3: NOR tra NOT_A e NOT_B (è vero solo se A=1 e B=1)
     Wire **not_a_b_wires = malloc(sizeof(Wire*) * 2); 
     not_a_b_wires[0] = not_a_wire->output_wire;
     not_a_b_wires[1] = not_b_wire->output_wire;
-    Transistor *nor_not_ab = create_NOR_Gate(circuit, not_a_b_wires);
+    Transistor *nor_not_ab = create_NOR_Gate(circuit, not_a_b_wires, 2);
    
     free(not_a_b_wires); 
     
@@ -343,7 +350,7 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
     nor_ab_nor_not_ab[0] = nor_ab->output_wire;
     nor_ab_nor_not_ab[1] = nor_not_ab->output_wire;
 
-    Transistor *xor = create_NOR_Gate(circuit, nor_ab_nor_not_ab);     
+    Transistor *xor = create_NOR_Gate(circuit, nor_ab_nor_not_ab, 2);
 
     free(nor_ab_nor_not_ab);
     return xor;
@@ -458,10 +465,15 @@ void create_Half_Adder(Circuit *circuit, int input_a, int input_b)
     inputs[1] = b;
 
     // 1. Somma: XOR tra A e B
-    Transistor *sum_gate = create_XOR_Gate(circuit, inputs);
+    Transistor *sum_gate = create_XOR_Gate(circuit, inputs, 2);
 
     // 2. Riporto: AND tra A e B (alimentata da VCC, controllata da A e B)
-    Transistor *carry_gate = create_AND_Gate(circuit, vcc, a, b);
+    Wire **and_wire_list = create_wire_list(circuit, "and_wire", 0, 3);
+    and_wire_list[0] = vcc;
+    and_wire_list[1] = a;
+    and_wire_list[2] = b;
+
+    Transistor *carry_gate = create_AND_Gate(circuit, and_wire_list, 3);
 
     //free(inputs);
 }
@@ -473,7 +485,7 @@ void create_Clock_Cicle(Circuit *circuit)
     loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
 
     // 2. Creiamo una porta NOT che legge da loop_wire e scrive su loop_wire!
-    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire);
+    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire, 1);
 
     // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
     not_gate->output_wire = loop_wire; 
