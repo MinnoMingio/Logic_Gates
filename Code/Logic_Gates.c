@@ -11,19 +11,6 @@ typedef struct Wire Wire;
 
 typedef void* (*CircuitFunc)(Circuit *circuit, char **param, int count);
 
-typedef struct GateFunction 
-{
-    char *name;
-    int param_count;
-    CircuitFunc func;
-} GateFunction;
-
-typedef struct FunctionTable
-{
-    GateFunction **funcs;
-    int funcs_count;
-} FunctionTable;
-
 typedef struct RowParser
 {
     int row;
@@ -46,6 +33,34 @@ typedef struct Transistor{
     struct Wire *control_wire;
     int count;
 } Transistor;
+
+typedef struct CircuitObj
+{
+    int type;
+    union
+    {
+        Wire *wire;
+        Transistor *transistor;
+        struct list
+        {
+            CircuitObj **objs;
+        };
+    };
+} CircuitObj;
+
+typedef struct GateFunction 
+{
+    char *name;
+    int param_count;
+    CircuitFunc func;
+} GateFunction;
+
+typedef struct FunctionTable
+{
+    GateFunction **funcs;
+    int funcs_count;
+} FunctionTable;
+
 
 typedef struct Circuit{
     int state;
@@ -502,6 +517,18 @@ void execute_parsing(Circuit *circuit, RowParser **string_list)
     }
 }
 
+void *Or_Wrap(Circuit *circuit, char **param, int count)
+{
+    Wire *a_wire = create_wire(circuit, param[0], 0);
+    Wire *b_wire = create_wire(circuit, param[1], 0);
+
+    Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
+    input_wires[0] = a_wire;
+    input_wires[1] = b_wire;
+
+    Transistor *and_gate = create_OR_Gate(circuit, input_wires);
+}
+
 void *And_Wrap(Circuit *circuit, char **param, int count)
 {
     Wire *input_wire = create_wire(circuit, param[0], 0);
@@ -511,12 +538,103 @@ void *And_Wrap(Circuit *circuit, char **param, int count)
     Transistor *and_gate = create_AND_Gate(circuit, input_wire, a_wire, b_wire);
 }
 
+void *Not_Wrap(Circuit *circuit, char **param, int count)
+{
+    Wire *input_wire = create_wire(circuit, param[0], 0);
+
+    Transistor *and_gate = create_NOT_Gate(circuit, input_wire);
+}
+
+void *Nor_Wrap(Circuit *circuit, char **param, int count)
+{
+    Wire *a_wire = create_wire(circuit, param[0], 0);
+    Wire *b_wire = create_wire(circuit, param[1], 0);
+
+    Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
+    input_wires[0] = a_wire;
+    input_wires[1] = b_wire;
+
+    Transistor *and_gate = create_NOR_Gate(circuit, input_wires);
+}
+
+void *Nand_Wrap(Circuit *circuit, char **param, int count)
+{
+    Wire *input_wire = create_wire(circuit, param[0], 0);
+    Wire *a_wire = create_wire(circuit, param[1], 0);
+    Wire *b_wire = create_wire(circuit, param[2], 0);
+
+    Transistor *and_gate = create_NAND_Gate(circuit, input_wire, a_wire, b_wire);
+}
+
+void *Xor_Wrap(Circuit *circuit, char **param, int count)
+{
+    Wire *a_wire = create_wire(circuit, param[0], 0);
+    Wire *b_wire = create_wire(circuit, param[1], 0);
+
+    Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
+    input_wires[0] = a_wire;
+    input_wires[1] = b_wire;
+
+    Transistor *and_gate = create_XOR_Gate(circuit, input_wires);
+}
+
+Transistor *find_transistor_by_name(Circuit *circuit, char *name)
+{
+    for(int i = 0; i < circuit->transistor_count; i++)
+    {
+        if(strcmp(circuit->transistors[i]->name, name) == 0)
+        {
+            return circuit->transistors[i];
+        }
+    }
+    return NULL;
+}
+
+Wire *find_wire_by_name(Circuit *circuit, char *name)
+{
+    for(int i = 0; i < circuit->wire_count; i++)
+    {
+        if(strcmp(circuit->wires[i]->name, name) == 0)
+        {
+            return circuit->wires[i];
+        }
+    }
+    return NULL;
+}
+
+
+void *Update_Transistor_Wrap(Circuit *circuit, char **param, int count)
+{
+    Transistor *transistor = NULL;
+    Wire **input_wires;
+    Wire *output_wire;
+    Wire *control_wire;
+    
+    for(int i = 0; i < circuit->transistor_count; i++)
+    {
+        if(strcmp(circuit->transistors[i]->name, param[0]) == 0)
+        {
+            transistor = circuit->transistors[i];
+            if(param[1] != NULL) {input_wires = find_wire_by_name(circuit, param[1]);} else {input_wires = transistor->input_wire;}
+            if(param[2] != NULL) {output_wire = find_wire_by_name(circuit, param[2]);} else {output_wire = transistor->output_wire;}
+            if(param[3] != NULL) {control_wire = find_wire_by_name(circuit, param[3]);} else {control_wire = transistor->control_wire;}
+        }
+    }
+
+    if(transistor != NULL)
+    {
+        transistor->input_wire = input_wires;
+        transistor->output_wire = output_wire;
+        transistor->control_wire = control_wire;
+    }
+}
+
 void *Update_Wire_Wrap(Circuit *circuit, char **param, int count)
 {
     Wire *wire = NULL;
     int power = 0;
     int driven = 0;
-    printf(" AIAIAIAIAI \n%s", param[3]);
+    
     for(int i = 0; i < circuit->wire_count; i++)
     {
         if(strcmp(circuit->wires[i]->name, param[0]) == 0)
@@ -534,7 +652,7 @@ void *Update_Wire_Wrap(Circuit *circuit, char **param, int count)
     }
 }
 
-int main()
+Circuit *create_circuit()
 {
     Circuit *circuit = malloc(sizeof(*circuit));
 
@@ -547,15 +665,28 @@ int main()
     circuit->functionTable = malloc(sizeof(FunctionTable));
     circuit->functionTable->funcs = NULL;
     circuit->functionTable->funcs_count = 0;
+
+    return circuit;
+}
+
+int main(void)
+{
+    Circuit *circuit = create_circuit();
+
+    append_func_to_table(circuit, "OR", 3, Or_Wrap);
     append_func_to_table(circuit, "AND", 3, And_Wrap);
-    append_func_to_table(circuit, "UPDATE", 3, Update_Wire_Wrap);
+    append_func_to_table(circuit, "NOT", 3, Not_Wrap);
+    append_func_to_table(circuit, "NOR", 3, Nor_Wrap);
+    append_func_to_table(circuit, "NAND", 3, Nand_Wrap);
+    append_func_to_table(circuit, "XOR", 3, Xor_Wrap);
+    append_func_to_table(circuit, "UPDATE_W", 3, Update_Wire_Wrap);
+    append_func_to_table(circuit, "UPDATE_T", 3, Update_Transistor_Wrap);
 
     printf("\n\n\n");
-    RowParser **string_list = parse("AND vcc a b; UPDATE vcc 1 0; UPDATE a 1 0; UPDATE b 1 0;");
+    RowParser **string_list = parse("XOR xor_a xor_b; UPDATE xor_a 1 0; AND vcc a b; UPDATE vcc 1 0; UPDATE a 1 0; UPDATE b 1 0;");
     printf("\n%d\n", string_list[0]->row);
     printf("\n%s\n", string_list[0]->content[2]);
 
-    printf("ASD");
     execute_parsing(circuit, string_list);
 
     run_circuit(circuit);
