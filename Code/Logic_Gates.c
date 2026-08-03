@@ -5,16 +5,22 @@
 #include<string.h>
 #include<ctype.h>
 
+#define OBJ_INT  0
+#define OBJ_FUNC 1
+#define OBJ_WIRE 2
+#define OBJ_TRANSISTOR 3
+
 typedef struct Circuit Circuit;
 typedef struct Transistor Transistor;
 typedef struct Wire Wire;
+typedef struct CircuitObj CircuitObj;
 
-typedef void* (*CircuitFunc)(Circuit *circuit, char **param, int count);
+typedef void* (*CircuitFunc)(Circuit *circuit, CircuitObj *circuitObj, int count);
 
 typedef struct RowParser
 {
     int row;
-    char **content;
+    CircuitObj **content;
 } RowParser;
 
 typedef struct Wire{
@@ -34,11 +40,13 @@ typedef struct Transistor{
     int count;
 } Transistor;
 
-typedef struct CircuitObj
+typedef struct CircuitObj 
 {
     int type;
     union
     {
+        int i;
+        GateFunction *func;
         Wire *wire;
         Transistor *transistor;
         struct list
@@ -47,6 +55,12 @@ typedef struct CircuitObj
         };
     };
 } CircuitObj;
+
+typedef struct Context
+{
+    FunctionTable *funcTable;
+    RowParser **rows;
+} Context;
 
 typedef struct GateFunction 
 {
@@ -64,7 +78,7 @@ typedef struct FunctionTable
 
 typedef struct Circuit{
     int state;
-    FunctionTable *functionTable;
+    Context *context;
     Transistor **transistors;
     Wire **wires;
     int transistor_count;
@@ -73,9 +87,9 @@ typedef struct Circuit{
 
 void append_func_to_table(Circuit *circuit, char *name, int param_count, CircuitFunc func)
 {
-    int len = circuit->functionTable->funcs_count + 1;
+    int len = circuit->context->funcTable->funcs_count + 1;
 
-    GateFunction ***function_list = &(circuit->functionTable->funcs);
+    GateFunction ***function_list = &(circuit->context->funcTable->funcs);
 
     *function_list = realloc(*function_list, sizeof(GateFunction*) * (len));
 
@@ -84,7 +98,7 @@ void append_func_to_table(Circuit *circuit, char *name, int param_count, Circuit
     (*function_list)[len-1]->param_count = param_count;
     (*function_list)[len-1]->func = func;
 
-    circuit->functionTable->funcs_count++;
+    circuit->context->funcTable->funcs;
 }
 
 void append_wire_to_circuit(Circuit *circuit, Wire *wire)
@@ -408,13 +422,26 @@ void create_Clock_Cicle(Circuit *circuit)
     // Sorgente di alimentazione sempre attiva (VCC)
 }
 
-RowParser **parse(char *txt)
+GateFunction *find_function_by_name(Circuit *circuit, char *name)
+{
+    for(int i = 0; i < circuit->context->funcTable->funcs_count; i++)
+    {
+        if(strcmp(circuit->context->funcTable->funcs[i]->name, name) == 0)
+        {
+            return circuit->context->funcTable->funcs[i];
+        }
+    }
+    return NULL;
+}
+
+CircuitObj **parse(Circuit *circuit, char *txt)
 {
     if(txt == NULL || txt[0] == '\0') return NULL;
 
     char *token = txt;
     char *final_token;
     RowParser **rows = NULL;
+    circuit->context->rows = rows;
 
     int row_count = 0;
     int element_count = 0;
@@ -429,6 +456,8 @@ RowParser **parse(char *txt)
 
         while(token[0] != ';' && token[0] != '\n' && token[0] != '\0')
         {
+            CircuitObj *circuitObj = malloc(sizeof(*circuitObj));
+
             while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
 
             if(token[0] == '\0') break;
@@ -446,6 +475,20 @@ RowParser **parse(char *txt)
             //memset(final_token, start, end - start);
             memcpy(final_token, start, length);
             final_token[length] = '\0';
+
+            GateFunction *func = find_function_by_name(circuit, final_token);
+            if(func != NULL)
+            {
+                circuitObj->type == OBJ_FUNC;
+                circuitObj->func = func;
+            }
+            else if(strcmp(final_token, "var"))
+            {
+                while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
+                char *start = token; 
+                while(isgraph(token[0]) && token[0] != ';') token++;
+                char *end = token;
+            }
 
             //final_string = realloc(final_string, sizeof(char*) * (count+2));
             //final_string[count] = final_token;
