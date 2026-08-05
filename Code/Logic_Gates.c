@@ -13,15 +13,23 @@
 typedef struct Circuit Circuit;
 typedef struct Transistor Transistor;
 typedef struct Wire Wire;
+typedef struct Symbol Symbol;
 typedef struct CircuitObj CircuitObj;
 
-typedef void* (*CircuitFunc)(Circuit *circuit, CircuitObj *circuitObj, int count);
+typedef void* (*CircuitFunc)(Circuit *circuit, CircuitObj *obj_list, int count);
 
-typedef struct RowParser
+typedef enum
 {
-    int row;
-    CircuitObj **content;
-} RowParser;
+    SYM_FUNC,
+    SYM_VAR,
+} SymType;
+
+typedef enum
+{
+    OP_ASSIGN,
+    OP_MATH,
+} OpType;
+
 
 typedef struct Wire{
     char *name;
@@ -46,7 +54,8 @@ typedef struct CircuitObj
     union
     {
         int i;
-        GateFunction *func;
+        char *str;
+        Symbol *sys;
         Wire *wire;
         Transistor *transistor;
         struct list
@@ -56,25 +65,39 @@ typedef struct CircuitObj
     };
 } CircuitObj;
 
-typedef struct Context
-{
-    FunctionTable *funcTable;
-    RowParser **rows;
-} Context;
-
-typedef struct GateFunction 
+typedef struct Operator
 {
     char *name;
-    int param_count;
-    CircuitFunc func;
-} GateFunction;
+    OpType type;
+} Operator;
 
-typedef struct FunctionTable
+typedef struct RowParser
 {
-    GateFunction **funcs;
-    int funcs_count;
-} FunctionTable;
+    int row;
+    CircuitObj **content;
+} RowParser;
 
+typedef struct Symbol 
+{
+    char *name;
+    void *data;
+    int param_count;
+    SymType type;
+} Symbol;
+
+typedef struct SymbolTable
+{
+    Symbol **sym_list;
+    int sym_count;
+} SymbolTable;
+
+typedef struct Context
+{
+    CircuitObj **stack;
+    SymbolTable *symTable;
+    RowParser **rows;
+    int count;
+} Context;
 
 typedef struct Circuit{
     int state;
@@ -85,20 +108,33 @@ typedef struct Circuit{
     int wire_count;
 } Circuit;
 
-void append_func_to_table(Circuit *circuit, char *name, int param_count, CircuitFunc func)
+Symbol *create_symbol(char *name, void *data, SymType type, int param_count)
 {
-    int len = circuit->context->funcTable->funcs_count + 1;
+    Symbol *sys = malloc(sizeof(Symbol));
+    sys->name = strdup(name);
+    sys->data = data;
+    sys->param_count = param_count;
+    sys->type = type;
+    return sys;
+}
 
-    GateFunction ***function_list = &(circuit->context->funcTable->funcs);
+void append_sym_to_table(Circuit *circuit, Symbol *sym)
+{
+    int len = circuit->context->symTable->sym_count + 1;
 
-    *function_list = realloc(*function_list, sizeof(GateFunction*) * (len));
+    Symbol ***function_list = &(circuit->context->symTable->sym_list);
 
-    (*function_list)[len-1] = malloc(sizeof(GateFunction));
-    (*function_list)[len-1]->name = strdup(name);
-    (*function_list)[len-1]->param_count = param_count;
-    (*function_list)[len-1]->func = func;
+    *function_list = realloc(*function_list, sizeof(Symbol*) * (len));
 
-    circuit->context->funcTable->funcs;
+    //(*function_list)[len-1] = malloc(sizeof(Symbol));
+    //(*function_list)[len-1]->name = strdup(name);
+    //(*function_list)[len-1]->param_count = param_count;
+    //(*function_list)[len-1]->data = data;
+    //(*function_list)[len-1]->type = type;
+
+    (*function_list)[len-1] = sym;
+
+    circuit->context->symTable->sym_count++;
 }
 
 void append_wire_to_circuit(Circuit *circuit, Wire *wire)
@@ -422,24 +458,49 @@ void create_Clock_Cicle(Circuit *circuit)
     // Sorgente di alimentazione sempre attiva (VCC)
 }
 
-GateFunction *find_function_by_name(Circuit *circuit, char *name)
+Symbol *find_function_by_name(Circuit *circuit, char *name)
 {
-    for(int i = 0; i < circuit->context->funcTable->funcs_count; i++)
+    for(int i = 0; i < circuit->context->symTable->sym_count; i++)
     {
-        if(strcmp(circuit->context->funcTable->funcs[i]->name, name) == 0)
+        if(circuit->context->symTable->sym_list[i]->type == SYM_FUNC)
         {
-            return circuit->context->funcTable->funcs[i];
+            if(strcmp(circuit->context->symTable->sym_list[i]->name, name) == 0)
+            {
+                return circuit->context->symTable->sym_list[i];
+            }
         }
     }
     return NULL;
 }
 
-CircuitObj **parse(Circuit *circuit, char *txt)
+char *crate_token(char *start, size_t length)
+{
+    char *final_token = NULL;
+
+    final_token = malloc(length + 1);
+    // memset(final_token, start, end - start);
+    memcpy(final_token, start, length);
+    final_token[length] = '\0';
+
+    return final_token;
+}
+
+void append_obj_to_stack(Circuit *circuit, CircuitObj *obj)
+{
+    int length = circuit->context->count;
+    circuit->context->stack = realloc(circuit->context->stack, length+1);
+    circuit->context->stack[length] = obj;
+
+    circuit->context->count++;
+}
+
+RowParser **parse(Circuit *circuit, char *txt)
 {
     if(txt == NULL || txt[0] == '\0') return NULL;
 
     char *token = txt;
     char *final_token;
+    circuit->context->stack = NULL;
     RowParser **rows = NULL;
     circuit->context->rows = rows;
 
@@ -472,30 +533,50 @@ CircuitObj **parse(Circuit *circuit, char *txt)
 
             int length = end - start;
             final_token = malloc(length + 1);
-            //memset(final_token, start, end - start);
             memcpy(final_token, start, length);
             final_token[length] = '\0';
 
-            GateFunction *func = find_function_by_name(circuit, final_token);
-            if(func != NULL)
+            Symbol *sys = NULL;
+            for(int i = 0; i < circuit->context->symTable->sym_count; i++)
             {
-                circuitObj->type == OBJ_FUNC;
-                circuitObj->func = func;
+                if(strcmp(final_token, circuit->context->symTable->sym_list[i]->name))
+                {
+                    sys = circuit->context->symTable->sym_list[i];
+                    circuitObj->sys = sys;
+                    break;
+                }
             }
-            else if(strcmp(final_token, "var"))
+            if(strcmp(final_token, "var"))
             {
-                while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
-                char *start = token; 
-                while(isgraph(token[0]) && token[0] != ';') token++;
+                while (isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
+                char *start = token;
+                while (isgraph(token[0]) && token[0] != ';') token++;
                 char *end = token;
+
+                int length = end-start;
+
+                char *var_name = NULL;
+                memcpy(var_name, start, length);
+                sys = create_symbol(var_name, NULL, SYM_VAR, 1);
+                append_sym_to_table(circuit, sys);
+                circuitObj->sys = sys;
+            }
+            else if(isdigit(final_token[0]))
+            {
+                circuitObj->i = atoi(final_token);
+            }else if(final_token[0] == '"' && final_token[length] == '"')
+            {
+                circuitObj->str = final_token;
             }
 
             //final_string = realloc(final_string, sizeof(char*) * (count+2));
             //final_string[count] = final_token;
-            rows[row_count]->content = realloc(rows[row_count]->content, sizeof(char*) * (element_count+2));
+            rows[row_count]->content = realloc(rows[row_count]->content, sizeof(CircuitObj*) * (element_count+2));
             rows[row_count]->row = row_count+1;
-            rows[row_count]->content[element_count] = final_token;
+            rows[row_count]->content[element_count] = circuitObj;
             rows[row_count]->content[element_count+1] = NULL; // NULL terminator
+
+            append_obj_to_stack(circuit, circuitObj);   
 
             printf("%s\n", rows[row_count]->content[element_count]);
             element_count++;
@@ -507,21 +588,22 @@ CircuitObj **parse(Circuit *circuit, char *txt)
     //final_string[count] = NULL;
     rows[row_count] = NULL;
     printf("\n\nend");
-    return rows;
+    return rows; 
 }
 
 void execute_parsing(Circuit *circuit, RowParser **string_list)
 {
+    /*
     int count = 0;
     int row = 0;
 
     while(string_list[row] != NULL)
     {
         count = 0;
-        char *currentToken = string_list[row]->content[count];
+        CircuitObj *currentToken = string_list[row]->content[count];
         char **param = NULL;
         int param_size = 0;
-        GateFunction *currentFunc = NULL;
+        Symbol *currentFunc = NULL;
 
         int found = 0;
         while(currentToken != NULL)
@@ -529,12 +611,12 @@ void execute_parsing(Circuit *circuit, RowParser **string_list)
             if(!found)
             {
                 printf("\n");
-                for (int i = 0; i < circuit->functionTable->funcs_count; i++)
+                for (int i = 0; i < circuit->context->symTable->sym_count; i++)
                 {
-                    if (strcmp(currentToken, circuit->functionTable->funcs[i]->name) == 0)
+                    if (strcmp(currentToken, circuit->context->symTable->sym_list[i]->name) == 0)
                     {
-                        printf("TROVATA! (%s): ", circuit->functionTable->funcs[i]->name);
-                        currentFunc = circuit->functionTable->funcs[i];
+                        printf("TROVATA! (%s): ", circuit->context->symTable->sym_list[i]->name);
+                        currentFunc = circuit->context->symTable->sym_list[i];
                         param = malloc(sizeof(char *) * (currentFunc->param_count + 1));
                         found = 1;
                     } 
@@ -555,9 +637,10 @@ void execute_parsing(Circuit *circuit, RowParser **string_list)
             count++;
         }
          
-        if(currentFunc != NULL) currentFunc->func(circuit, param, param_size);
+        //if(currentFunc != NULL) ((CircuitFunc)currentFunc->data)(circuit, param, param_size);
         row++;
     }
+    */
 }
 
 void *Or_Wrap(Circuit *circuit, char **param, int count)
@@ -705,9 +788,9 @@ Circuit *create_circuit()
 
     circuit->wires = NULL;    
     circuit->wire_count = 0;    
-    circuit->functionTable = malloc(sizeof(FunctionTable));
-    circuit->functionTable->funcs = NULL;
-    circuit->functionTable->funcs_count = 0;
+    circuit->context->symTable = malloc(sizeof(SymbolTable));
+    circuit->context->symTable->sym_list = NULL;
+    circuit->context->symTable->sym_count = 0;
 
     return circuit;
 }
@@ -716,20 +799,19 @@ int main(void)
 {
     Circuit *circuit = create_circuit();
 
-    append_func_to_table(circuit, "OR", 3, Or_Wrap);
-    append_func_to_table(circuit, "AND", 3, And_Wrap);
-    append_func_to_table(circuit, "NOT", 3, Not_Wrap);
-    append_func_to_table(circuit, "NOR", 3, Nor_Wrap);
-    append_func_to_table(circuit, "NAND", 3, Nand_Wrap);
-    append_func_to_table(circuit, "XOR", 3, Xor_Wrap);
-    append_func_to_table(circuit, "UPDATE_W", 3, Update_Wire_Wrap);
-    append_func_to_table(circuit, "UPDATE_T", 3, Update_Transistor_Wrap);
+    append_sym_to_table(circuit, create_symbol("OR", Or_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("AND", And_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("NOT", Not_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("NOR", Nor_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("NAND", Nand_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("XOR", Xor_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("UPDATE_W", Update_Wire_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("UPDATE_T", Update_Transistor_Wrap, SYM_FUNC, 3));
 
     printf("\n\n\n");
-    RowParser **string_list = parse("XOR xor_a xor_b; UPDATE xor_a 1 0; AND vcc a b; UPDATE vcc 1 0; UPDATE a 1 0; UPDATE b 1 0;");
+    RowParser **string_list = parse(circuit, "XOR xor_a xor_b; UPDATE xor_a 1 0; AND vcc a b; UPDATE vcc 1 0; UPDATE a 1 0; UPDATE b 1 0;");
     printf("\n%d\n", string_list[0]->row);
     printf("\n%s\n", string_list[0]->content[2]);
-
     execute_parsing(circuit, string_list);
 
     run_circuit(circuit);
