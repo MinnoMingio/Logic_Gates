@@ -268,7 +268,7 @@ void *print_objects(CircuitObj *obj)
     switch (obj->type)
     {
         case OBJ_INT:
-            printf("int: %d", obj->i);
+            printf("int: %d\n", obj->i);
             break;
         case OBJ_STR:
             printf("str: %s\n", obj->str);
@@ -544,6 +544,21 @@ Symbol *find_function_by_name(Circuit *circuit, char *name)
     return NULL;
 }
 
+Symbol *find_var_by_name(Circuit *circuit, char *name)
+{
+    for(int i = 0; i < circuit->context->symTable->sym_count; i++)
+    {
+        if(circuit->context->symTable->sym_list[i]->type == SYM_VAR)
+        {
+            if(strcmp(circuit->context->symTable->sym_list[i]->name, name) == 0)
+            {
+                return circuit->context->symTable->sym_list[i];
+            }
+        }
+    }
+    return NULL;
+}
+
 char *create_token(char *start, size_t length)
 {
     char *final_token = NULL;
@@ -564,6 +579,99 @@ void append_obj_to_list(CircuitObj *list_obj, CircuitObj *obj)
     list_obj->list.objs[length] = obj;
 
     list_obj->list.count++; 
+}
+
+CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, char *final_token)
+{
+    CircuitObj *circuitObj = malloc(sizeof(CircuitObj));
+    circuitObj->type = 0;
+
+    char *end = *token;
+
+    int length = end - start;
+    final_token = malloc(length + 1);
+    memcpy(final_token, start, length);
+    final_token[length] = '\0';
+    
+    Symbol *sys = NULL;
+    for (int i = 0; i < circuit->context->symTable->sym_count; i++)
+    {
+        if(circuit->context->symTable->sym_list[i]->type == SYM_FUNC)
+        {
+            if (strcmp(final_token, circuit->context->symTable->sym_list[i]->name) == 0)
+            {
+                circuitObj->type = OBJ_FUNC;
+                sys = circuit->context->symTable->sym_list[i];
+                circuitObj->sys = sys;
+                break;
+            }
+        }
+    }
+    if (strcmp(final_token, "var") == 0)
+    {
+        while (isspace((*token)[0]) && (*token)[0] != '\n' && (*token)[0] != ';')
+            (*token)++;
+        char *start = *token;
+        while (isgraph(*(token)[0]) && (*token)[0] != ';')
+            (*token)++;
+        char *end = *token;
+
+        int length = end - start;
+
+        char *var_name = malloc(length + 1);
+        memcpy(var_name, start, length);
+        var_name[length] = '\0';
+
+        int found = 0;
+        sys = find_var_by_name(circuit, var_name); 
+
+        if(sys == NULL)
+        {
+            sys = create_symbol(var_name, NULL, SYM_VAR, 1);
+
+            CircuitObj *var_value = parse_obj(circuit, token, start, final_token);
+            sys->data = var_value;
+            printf("\n\n waaa \n");
+            print_objects(var_value);
+
+            append_sym_to_table(circuit, sys);
+
+            circuitObj->type = OBJ_VAR;
+            circuitObj->sys = sys;
+        }else
+        {
+            circuitObj->type = OBJ_VAR;
+            circuitObj->sys = sys;
+        }
+    }
+    else if (isdigit(final_token[0]))
+    {
+        circuitObj->type = OBJ_INT;
+        circuitObj->i = atoi(final_token);
+    }else if(final_token[0] == '"' && final_token[length-1] == '"')
+    {
+        circuitObj->type = OBJ_STR;
+        int new_length = length - 2;
+        circuitObj->str = malloc(new_length + 1);
+        memcpy(circuitObj->str, start + 1, new_length);
+        circuitObj->str[new_length] = '\0';
+    }
+    else if (circuitObj->type == 0)
+    {
+        Symbol *sys = find_var_by_name(circuit, final_token);
+        if(sys == NULL)
+        {
+            circuitObj->type = OBJ_STR;
+            circuitObj->str = final_token;
+        }
+        else
+        {
+            circuitObj->type = OBJ_VAR;
+            circuitObj->sys = sys;
+        }
+    }
+
+    return circuitObj;
 }
 
 RowParser **parse(Circuit *circuit, char *txt)
@@ -590,9 +698,6 @@ RowParser **parse(Circuit *circuit, char *txt)
 
         while(token[0] != ';' && token[0] != '\n' && token[0] != '\0')
         {
-            CircuitObj *circuitObj = malloc(sizeof(*circuitObj));
-            circuitObj->type = 0;
-
             while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
 
             if(token[0] == '\0') break;
@@ -603,57 +708,8 @@ RowParser **parse(Circuit *circuit, char *txt)
 
             while(isgraph(token[0]) && token[0] != ';') token++;
 
-            char *end = token;
-
-            int length = end - start;
-            final_token = malloc(length + 1);
-            memcpy(final_token, start, length);
-            final_token[length] = '\0';
-
-            Symbol *sys = NULL;
-            for(int i = 0; i < circuit->context->symTable->sym_count; i++)
-            {
-                if(strcmp(final_token, circuit->context->symTable->sym_list[i]->name) == 0)
-                {
-                    circuitObj->type = OBJ_FUNC;
-                    sys = circuit->context->symTable->sym_list[i];
-                    circuitObj->sys = sys;
-                    break;
-                }
-            }
-            if(strcmp(final_token, "var") == 0)
-            {
-                circuitObj->type = OBJ_VAR;
-                while (isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
-                char *start = token;
-                while (isgraph(token[0]) && token[0] != ';') token++;
-                char *end = token;
-
-                int length = end-start;
-
-                char *var_name = malloc(length+1);
-                memcpy(var_name, start, length);
-                var_name[length] = '\0';
-                sys = create_symbol(var_name, NULL, SYM_VAR, 1);
-                append_sym_to_table(circuit, sys);
-                circuitObj->sys = sys;
-            }
-            else if(isdigit(final_token[0]))
-            {
-                circuitObj->type = OBJ_INT;
-                circuitObj->i = atoi(final_token);
-            }else if(final_token[0] == '"' && final_token[length-1] == '"')
-            {
-                circuitObj->type = OBJ_STR;
-                int new_length = length - 2;
-                circuitObj->str = malloc(new_length+1);
-                memcpy(circuitObj->str, start+1, new_length);
-                circuitObj->str[new_length] = '\0';
-            }else if(circuitObj->type == 0)
-            {
-                circuitObj->type = OBJ_STR;
-                circuitObj->str = final_token;
-            }
+            
+            CircuitObj *circuitObj = parse_obj(circuit, &token, start, final_token); 
 
             //final_string = realloc(final_string, sizeof(char*) * (count+2));
             //final_string[count] = final_token;
@@ -733,6 +789,16 @@ void execute_parsing(Circuit *circuit)
                     ((CircuitFunc)currentFunc->data)(circuit, params, param_size);
                     i = k - 1;
                     break;
+                }
+            }
+
+            if(currentToken->type == OBJ_VAR)
+            {
+                if(strcmp(currentToken->sys->name, circuit->context->symTable->sym_list[j]->name) == 0)
+                {
+                    printf("TROVATA! (%s): ", circuit->context->symTable->sym_list[j]->name);
+                    currentFunc = circuit->context->symTable->sym_list[j];
+                    //params = malloc(sizeof(char *) * (currentFunc->param_count + 1));
                 }
             }
         }
@@ -913,7 +979,7 @@ int main(void)
     append_sym_to_table(circuit, create_symbol("UPDATE_T", Update_Transistor_Wrap, SYM_FUNC, 3));
 
     printf("\n\n\n");
-    RowParser **string_list = parse(circuit, " \"ciaooo\" var 0 XOR xor_a xor_b; UPDATE_W xor_a 1 0; AND vcc a b; UPDATE_W vcc 1 0; UPDATE_W a 1 0; UPDATE_W b 1 0;");
+    RowParser **string_list = parse(circuit, " \"ciaooo\" var cacca XOR xor_a xor_b; UPDATE_W xor_a 1 0; UPDATE_W xor_b 1 0 cacca;");
 
     printf("\nSTART\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
