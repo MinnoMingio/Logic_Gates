@@ -10,6 +10,10 @@
 #define OBJ_LIST 3
 #define OBJ_FUNC 4
 #define OBJ_VAR  5
+#define OBJ_OP   6
+
+#define READ_ONLY  0
+#define READ_WRITE 1
 
 typedef struct Circuit Circuit;
 typedef struct Transistor Transistor;
@@ -55,15 +59,16 @@ typedef struct Operator
     OpType type;
 } Operator;
 
-typedef struct OperatorTable
-{
-    Operator **ops;
-    int count;
-} OperatorTable;
+//typedef struct OperatorTable
+//{
+    //Operator **ops;
+    //int count;
+//} OperatorTable;
 
 typedef struct CircuitObj 
 {
     int type;
+    int mode;
     union
     {
         int i;
@@ -104,7 +109,7 @@ typedef struct Context
 {
     CircuitObj *stack;
     SymbolTable *symTable;
-    OperatorTable *opTable;
+    //OperatorTable *opTable;
     RowParser **rows;
 } Context;
 
@@ -116,6 +121,14 @@ typedef struct Circuit{
     int transistor_count;
     int wire_count;
 } Circuit;
+
+Operator *create_op(char *name, OpType type)
+{
+    Operator *op = malloc(sizeof(Operator));
+    op->name = strdup(name);
+    op->type = type;
+    return op;
+}
 
 Symbol *create_symbol(char *name, void *data, SymType type, int param_count)
 {
@@ -244,13 +257,14 @@ char *return_print_objects(CircuitObj *obj)
             break;
         }
         case OBJ_LIST:
+        {
             size_t cap = 64;
-            int _len = 0;
+            int len = 0;
             result = malloc(cap);
             if (!result) return NULL;
 
             // Prefisso iniziale
-            _len += snprintf(result, cap, "list: [");
+            len += snprintf(result, cap, "list: [");
 
             for (size_t i = 0; i < obj->list.count; i++)
             {
@@ -260,7 +274,7 @@ char *return_print_objects(CircuitObj *obj)
 
                 size_t item_len = strlen(item_str);
                 // Separatore ", " tra gli elementi
-                size_t needed = _len + item_len + (i > 0 ? 2 : 0) + 2; // +2 per "]" e '\0'
+                size_t needed = len + item_len + (i > 0 ? 2 : 0) + 2; // +2 per "]" e '\0'
 
                 // Ridimensionamento dinamico del buffer se necessario
                 if (needed > cap)
@@ -280,21 +294,22 @@ char *return_print_objects(CircuitObj *obj)
                 if (i > 0)
                 {
                     strcat(result, ", ");
-                    _len += 2;
+                    len += 2;
                 }
 
                 strcat(result, item_str);
-                _len += item_len;
+                len += item_len;
                 free(item_str); // Liberiamo la stringa temporanea del singolo elemento
             }
 
             // Chiusura della parentesi quadra
-            if (_len + 2 > cap)
+            if (len + 2 > cap)
             {
-                result = realloc(result, _len + 2);
+                result = realloc(result, len + 2);
             }
             strcat(result, "]");
             break;
+        }
         case OBJ_FUNC:
         {
             int len = strlen(obj->sys->name) + 7; // "func: " + nome + '\0'
@@ -303,10 +318,19 @@ char *return_print_objects(CircuitObj *obj)
             break;
         }
         case OBJ_VAR:
+        {
             int len = strlen(obj->sys->name) + 7; // "func: " + nome + '\0'
             result = malloc(len);
             snprintf(result, len, "var: %s", obj->sys->name);
             break;
+        }
+        case OBJ_OP:
+        {
+            int len = strlen(obj->op->name) + 5;
+            result = malloc(len);
+            snprintf(result, len, "op: %s", obj->op->name);
+            break;
+        }
         case 0:
         {
             result = malloc(10);
@@ -346,7 +370,12 @@ void *print_objects(CircuitObj *obj)
             printf("func: %s\n", obj->sys->name);
             break;
         case OBJ_VAR:
+            //printf("var: %s, Value: %s\n", obj->sys->name, return_print_objects(obj->sys->data));
             printf("var: %s\n", obj->sys->name);
+            break;
+        case OBJ_OP:
+            printf("op: %s\n", obj->op->name);
+            break;
         case 0:
             printf("SEPARATO\n");
         default:
@@ -488,16 +517,19 @@ Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b
     return transistor2;
 }
 
-Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire)
+Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire, Wire *output_wire)
 {
     Transistor *transistor1 = create_transistor("NOT", 1);
     
     update_transistor(transistor1, 0, 1);
 
-    Wire *wire1 = create_wire(circuit, "1", 0);
+    if(output_wire == NULL)
+    {
+        output_wire = create_wire(circuit, "1", 0);
+    }
 
     transistor1->input_wire[0] = input_wire;
-    transistor1->output_wire = wire1;
+    transistor1->output_wire = output_wire;
 
     append_t_to_c(circuit, transistor1);
 
@@ -507,13 +539,13 @@ Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire)
 Transistor *create_NOR_Gate(Circuit *circuit, Wire **input_wire)
 {
     Transistor *or_gate = create_OR_Gate(circuit, input_wire);
-    return create_NOT_Gate(circuit, or_gate->output_wire);
+    return create_NOT_Gate(circuit, or_gate->output_wire, NULL);
 }
 
 Transistor *create_NAND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
 {
     Transistor *and_gate = create_AND_Gate(circuit, input_wire, a, b);
-    return create_NOT_Gate(circuit, and_gate->output_wire);
+    return create_NOT_Gate(circuit, and_gate->output_wire, NULL);
 }
 
 Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
@@ -529,8 +561,8 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire **input_wire)
     Wire *a = input_wire[0];
     Wire *b = input_wire[1];
     // Passo 1: Invertiamo i singoli segnali
-    Transistor *not_a_wire = create_NOT_Gate(circuit, a);
-    Transistor *not_b_wire = create_NOT_Gate(circuit, b);
+    Transistor *not_a_wire = create_NOT_Gate(circuit, a, NULL);
+    Transistor *not_b_wire = create_NOT_Gate(circuit, b, NULL);
 
     // Passo 2: NOR tra A e B (è vero solo se A=0 e B=0)
     Transistor *nor_ab = create_NOR_Gate(circuit, input_wire);
@@ -591,10 +623,9 @@ void create_Clock_Cicle(Circuit *circuit)
     loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
 
     // 2. Creiamo una porta NOT che legge da loop_wire e scrive su loop_wire!
-    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire);
+    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire, loop_wire);
 
     // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
-    not_gate->output_wire = loop_wire; 
     // Sorgente di alimentazione sempre attiva (VCC)
 }
 
@@ -656,6 +687,7 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
 {
     CircuitObj *circuitObj = malloc(sizeof(CircuitObj));
     circuitObj->type = 0;
+    circuitObj->mode = READ_WRITE;
 
     char *end = *token;
 
@@ -676,9 +708,24 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
                 circuitObj->sys = sys;
                 break;
             }
+        }else if(circuit->context->symTable->sym_list[i]->type == SYM_VAR)
+        {
+            if (strcmp(final_token, circuit->context->symTable->sym_list[i]->name) == 0)
+            {
+                circuitObj->type = OBJ_VAR;
+                sys = circuit->context->symTable->sym_list[i];
+                circuitObj->sys = sys;
+                break;
+            }
         }
     }
-    if (strcmp(final_token, "var") == 0)
+    if(strcmp(final_token, "=") == 0)
+    {
+        Operator *op = create_op(final_token, OP_ASSIGN);
+        circuitObj->type = OBJ_OP;
+        circuitObj->op = op;
+    }
+    else if (strcmp(final_token, "var") == 0)
     {
         while (isspace((*token)[0]) && (*token)[0] != '\n' && (*token)[0] != ';')
             (*token)++;
@@ -700,9 +747,9 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
         {
             sys = create_symbol(var_name, NULL, SYM_VAR, 1);
 
-            CircuitObj *var_value = parse_obj(circuit, token, start);
-            sys->data = var_value;
-            print_objects(var_value);
+            //CircuitObj *var_value = parse_obj(circuit, token, start);
+            //sys->data = var_value;
+            //print_objects(var_value);
 
             append_sym_to_table(circuit, sys);
 
@@ -710,6 +757,7 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
             circuitObj->sys = sys;
         }else
         {
+            printf("VAR GIA' ESISTENTE\n");
             circuitObj->type = OBJ_VAR;
             circuitObj->sys = sys;
         }
@@ -728,17 +776,8 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
     }
     else if (circuitObj->type == 0)
     {
-        Symbol *sys = find_var_by_name(circuit, final_token);
-        if(sys == NULL)
-        {
-            circuitObj->type = OBJ_STR;
-            circuitObj->str = final_token;
-        }
-        else
-        {
-            circuitObj->type = OBJ_VAR;
-            circuitObj->sys = sys;
-        }
+        circuitObj->type = OBJ_STR;
+        circuitObj->str = final_token;
     }
 
     return circuitObj;
@@ -769,6 +808,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
         {
             CircuitObj *circuitObj = malloc(sizeof(CircuitObj));
             circuitObj->type = 0;
+            circuitObj->mode = READ_WRITE;
 
             while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
 
@@ -841,8 +881,19 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
     }
     //final_string[count] = NULL;
     rows[row_count] = NULL;
-    printf("\n\nend\n");
+    printf("\n\nPARSE END\n");
     return rows; 
+}
+
+CircuitObj *get_actual_value(CircuitObj *obj)
+{
+    // Se è una variabile e ha un valore associato in 'data', restituiamo il suo valore
+    if (obj != NULL && obj->type == OBJ_VAR && obj->sys != NULL && obj->sys->data != NULL)
+    {
+        return (CircuitObj *)obj->sys->data;
+    }
+    // Altrimenti è già un valore letterale (es. un INT o una STR) e lo restituiamo così com'è
+    return obj;
 }
 
 void execute_parsing(Circuit *circuit)
@@ -853,21 +904,67 @@ void execute_parsing(Circuit *circuit)
     for(int i = 0; i < stack_count; i++)
     {
         CircuitObj *currentToken = stack[i];
-        Symbol *currentFunc = NULL;
         
         printf("\n");
-        for(int j = 0; j < circuit->context->symTable->sym_count; j++)
+        if (currentToken->type == OBJ_OP)
         {
-            if(currentToken->type == OBJ_FUNC)
+            switch (currentToken->op->type)
             {
-                if(strcmp(currentToken->sys->name, circuit->context->symTable->sym_list[j]->name) == 0)
+            case OP_ASSIGN:
+                CircuitObj *previous = stack[i - 1];
+                CircuitObj *next = stack[i + 1];
+
+                if (i > 0 && i < stack_count - 1 && previous != NULL && next != NULL)
                 {
-                    printf("TROVATA! (%s): ", circuit->context->symTable->sym_list[j]->name);
+                    if (previous->type == OBJ_VAR)
+                    {
+                        previous->mode = READ_ONLY;
+                        next->mode = READ_ONLY;
+
+                        previous->sys->data = next;
+                    }
+                }
+                // prendi obj prima e obj dopo
+                // controlla che esistano
+                // controlla che obj prima sia una var
+                // assegna al data della var il obj dopo
+                printf("VAR VALUE: %s", return_print_objects(previous->sys->data));
+                i++;
+                continue;
+            default:
+                break;
+            }
+        }
+        
+    }
+
+    for(int i = 0; i < stack_count; i++)
+    {
+        CircuitObj *currentToken = stack[i];
+        Symbol *currentFunc = NULL;
+
+        if(currentToken != NULL && currentToken->type == OBJ_VAR)
+        {
+            CircuitObj *innerObj = get_actual_value(stack[i]);
+
+            if(i < stack_count - 1 && stack[i+1]->type != OBJ_OP) innerObj->mode = READ_WRITE;
+            currentToken = innerObj;
+        }
+
+
+        for (int j = 0; j < circuit->context->symTable->sym_count; j++)
+        {
+            if (currentToken->type == OBJ_FUNC && currentToken->mode == READ_WRITE)
+            {
+                if (strcmp(currentToken->sys->name, circuit->context->symTable->sym_list[j]->name) == 0)
+                {
+                    printf("FUNC TROVATA! (%s): ", circuit->context->symTable->sym_list[j]->name);
                     currentFunc = circuit->context->symTable->sym_list[j];
-                    //params = malloc(sizeof(char *) * (currentFunc->param_count + 1));
+                    // params = malloc(sizeof(char *) * (currentFunc->param_count + 1));
                 }
 
                 CircuitObj *params = malloc(sizeof(CircuitObj));
+                params->type = OBJ_LIST;
 
                 params->list.objs = NULL;
                 params->list.count = 0;
@@ -877,8 +974,8 @@ void execute_parsing(Circuit *circuit)
                 while (currentFunc != NULL && stack[k] != NULL && stack[k]->type != 0 && stack[k]->type != OBJ_FUNC)
                 {
                     param_size++;
-                    printf("PARAM %d: %s %s ", k - i, return_print_objects(stack[k]), stack[k+1]->type != 0 && stack[k+1] != NULL && stack[k+1]->type != 0 && stack[k+1]->type != OBJ_FUNC? "-" : "" );
-                    append_obj_to_list(params, stack[k]);
+                    printf("PARAM %d: %s %s ", k - i, return_print_objects(stack[k]), stack[k + 1]->type != 0 && stack[k + 1] != NULL && stack[k + 1]->type != 0 && stack[k + 1]->type != OBJ_FUNC ? "-" : "");
+                    append_obj_to_list(params, get_actual_value(stack[k]));
                     // params->list.objs[param_size - 1] = currentToken;
                     // params->list.objs[param_size] = NULL;
 
@@ -891,67 +988,123 @@ void execute_parsing(Circuit *circuit)
                     break;
                 }
             }
-
+            /*
             if(currentToken->type == OBJ_VAR)
             {
                 if(strcmp(currentToken->sys->name, circuit->context->symTable->sym_list[j]->name) == 0)
                 {
-                    printf("TROVATA! (%s): ", circuit->context->symTable->sym_list[j]->name);
-                    currentFunc = circuit->context->symTable->sym_list[j];
+                    printf("VAR TROVATA! (%s): \n", circuit->context->symTable->sym_list[j]->name);
+                    //print_objects((CircuitObj*)circuit->context->symTable->sym_list[j]->data);
+                    currentToken = (CircuitObj*)currentToken->sys->data;
+                    i = 0;
+                    continue;
                     //params = malloc(sizeof(char *) * (currentFunc->param_count + 1));
                 }
             }
+            */
         }
     }
 }
 
+Wire *find_wire_by_name(Circuit *circuit, char *name);
+
+Wire **wires_by_params(Circuit *circuit, CircuitObj *params, int count)
+{
+    Wire **wire_list = create_wire_list(circuit, "wire_list", 0, count);
+    for(int i = 0; i < count; i++)
+    {
+        char *name = params->list.objs[i]->str;
+        Wire *wire = find_wire_by_name(circuit, name);
+        if(wire == NULL)
+        {
+            wire = create_wire(circuit, name, 0);
+        }
+        wire_list[i] = wire;
+    }
+    return wire_list;
+}
+
 void *Or_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
+    /*
     Wire *a_wire = create_wire(circuit, params->list.objs[0]->str, 0);
     Wire *b_wire = create_wire(circuit, params->list.objs[1]->str, 0);
 
     Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
     input_wires[0] = a_wire;
     input_wires[1] = b_wire;
+    */
 
-    Transistor *and_gate = create_OR_Gate(circuit, input_wires);
+    Wire **wire_list = wires_by_params(circuit, params, count);
+
+    Transistor *and_gate = create_OR_Gate(circuit, wire_list);
 }
 
 void *And_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
-    Wire *input_wire = create_wire(circuit, params->list.objs[0]->str, 0);
-    Wire *a_wire = create_wire(circuit, params->list.objs[1]->str, 0);
-    Wire *b_wire = create_wire(circuit, params->list.objs[2]->str, 0);
+    printf("CSAINMWFUI");
+    print_objects(params);
+    /*
+    char *input_name = params->list.objs[0]->str;
+    char *a_name = params->list.objs[1]->str;
+    char *b_name = params->list.objs[2]->str;
+    Wire *input_wire = find_wire_by_name(circuit, input_name);
+    Wire *a_wire = find_wire_by_name(circuit, a_name);
+    Wire *b_wire = find_wire_by_name(circuit, b_name);
+    
+    if(input_wire == NULL)
+    {
+        input_wire = create_wire(circuit, input_name, 0);
+    }
+    if(a_wire == NULL)
+    {
+        a_wire = create_wire(circuit, a_name, 0);
+    }
+    if(b_wire = NULL)
+    {
+        b_wire = create_wire(circuit, b_name, 0);
+    }
+    */
+    Wire **wire_list = wires_by_params(circuit, params, count);
 
-    Transistor *and_gate = create_AND_Gate(circuit, input_wire, a_wire, b_wire);
+    Transistor *and_gate = create_AND_Gate(circuit, wire_list[0], wire_list[1], wire_list[2]);
 }
 
 void *Not_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
-    Wire *input_wire = create_wire(circuit, params->list.objs[0]->str, 0);
+    //Wire *input_wire = create_wire(circuit, params->list.objs[0]->str, 0);
+    Wire **wire_list = wires_by_params(circuit, params, count);
 
-    Transistor *and_gate = create_NOT_Gate(circuit, input_wire);
+    Transistor *and_gate = create_NOT_Gate(circuit, wire_list[0], wire_list[1]);
 }
 
 void *Nor_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
+    /*
     Wire *a_wire = create_wire(circuit, params->list.objs[0]->str, 0);
     Wire *b_wire = create_wire(circuit, params->list.objs[1]->str, 0);
 
     Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
     input_wires[0] = a_wire;
     input_wires[1] = b_wire;
+    */
 
-    Transistor *and_gate = create_NOR_Gate(circuit, input_wires);
+    Wire **wire_list = wires_by_params(circuit, params, count);
+
+    Transistor *and_gate = create_NOR_Gate(circuit, wire_list);
 }
 
 void *Nand_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
+    /*
     Wire *input_wire = create_wire(circuit, params->list.objs[0]->str, 0);
     Wire *a_wire = create_wire(circuit, params->list.objs[1]->str, 0);
     Wire *b_wire = create_wire(circuit, params->list.objs[2]->str, 0);
+    */
 
-    Transistor *and_gate = create_NAND_Gate(circuit, input_wire, a_wire, b_wire);
+    Wire **wire_list = wires_by_params(circuit, params, count);
+
+    Transistor *and_gate = create_NAND_Gate(circuit, wire_list[0], wire_list[1], wire_list[2]);
 }
 
 void *Xor_Wrap(Circuit *circuit, CircuitObj *params, int count)
@@ -965,15 +1118,18 @@ void *Xor_Wrap(Circuit *circuit, CircuitObj *params, int count)
     }
 
     printf("\n");
-    
+    /* 
     Wire *a_wire = create_wire(circuit, params->list.objs[0]->str, 0);
     Wire *b_wire = create_wire(circuit, params->list.objs[1]->str, 0);
 
     Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
     input_wires[0] = a_wire;
     input_wires[1] = b_wire;
+    */
 
-    Transistor *xor_gate = create_XOR_Gate(circuit, input_wires);
+    Wire **wire_list = wires_by_params(circuit, params, count);
+
+    Transistor *xor_gate = create_XOR_Gate(circuit, wire_list);
 }
 
 Transistor *find_transistor_by_name(Circuit *circuit, char *name)
@@ -1006,17 +1162,20 @@ void *Update_Transistor_Wrap(Circuit *circuit, CircuitObj *params, int count)
     Transistor *transistor = find_transistor_by_name(circuit, params->list.objs[0]->str);
     Wire **input_wires = create_wire_list(circuit, "Input_Wires", 0, 2);
 
-    Wire *input_1 = create_wire(circuit, params->list.objs[1]->list.objs[0]->str, 0);
-    Wire *input_2 = create_wire(circuit, params->list.objs[1]->list.objs[2]->str, 0);
+    Wire *input_1 = find_wire_by_name(circuit, params->list.objs[1]->list.objs[0]->str);
+    if(input_1 == NULL) input_1 = create_wire(circuit, params->list.objs[1]->list.objs[0]->str, 0);
+    Wire *input_2 = find_wire_by_name(circuit, params->list.objs[2]->list.objs[0]->str);
+    if(input_2 == NULL) input_2 = create_wire(circuit, params->list.objs[2]->list.objs[0]->str, 0);
     input_wires[0] = input_1;
     input_wires[1] = input_2;
 
-    Wire *output_wire = create_wire(circuit, params->list.objs[2]->list.objs[0]->str, params->list.objs[1]->list.objs[1]->i);
-    Wire *control_wire = create_wire(circuit, params->list.objs[3]->list.objs[0]->str, params->list.objs[1]->list.objs[1]->i);;
+    Wire *output_wire = find_wire_by_name(circuit, params->list.objs[2]->list.objs[0]->str);
+    if(output_wire == NULL) output_wire = create_wire(circuit, params->list.objs[2]->list.objs[0]->str, params->list.objs[1]->list.objs[1]->i);
+    Wire *control_wire = find_wire_by_name(circuit, params->list.objs[3]->list.objs[0]->str);
+    if(control_wire == NULL) control_wire = create_wire(circuit, params->list.objs[3]->list.objs[0]->str, params->list.objs[1]->list.objs[1]->i);;
 
     if(transistor != NULL)
     {
-        printf("\n E' LUIIIIIIIIII");
         transistor->input_wire = input_wires;
         transistor->output_wire = output_wire;
         transistor->control_wire = control_wire;
@@ -1054,9 +1213,9 @@ Circuit *create_circuit()
     circuit->context->symTable->sym_list = NULL;
     circuit->context->symTable->sym_count = 0;
 
-    circuit->context->opTable = malloc(sizeof(OperatorTable));    
-    circuit->context->opTable->ops = NULL;
-    circuit->context->opTable->count = 0;
+    //circuit->context->opTable = malloc(sizeof(OperatorTable));    
+    //circuit->context->opTable->ops = NULL;
+    //circuit->context->opTable->count = 0;
 
     circuit->context->stack = malloc(sizeof(CircuitObj));
     circuit->context->stack->list.objs = NULL;
@@ -1071,7 +1230,7 @@ int main(void)
 
     append_sym_to_table(circuit, create_symbol("OR", Or_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("AND", And_Wrap, SYM_FUNC, 3));
-    append_sym_to_table(circuit, create_symbol("NOT", Not_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("NOT", Not_Wrap, SYM_FUNC, 2));
     append_sym_to_table(circuit, create_symbol("NOR", Nor_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("NAND", Nand_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("XOR", Xor_Wrap, SYM_FUNC, 3));
@@ -1079,15 +1238,24 @@ int main(void)
     append_sym_to_table(circuit, create_symbol("UPDATE_T", Update_Transistor_Wrap, SYM_FUNC, 3));
 
     printf("\n\n\n");
-    RowParser **string_list = parse(circuit, circuit->context->stack, " [1 2 3] \"ciaooo\" var in1 XOR xor_a xor_b; UPDATE_W xor_a 1 0; UPDATE_W xor_b 1 0; UPDATE_T \"XOR\" [in1 1 in2 2] [out 0] [ctrl 1];", 1);
-
-    printf("\nSTART\n");
+    //RowParser **string_list = parse(circuit, circuit->context->stack, "var a = in1; var b = in2; var ciao = XOR; ciao a b; UPDATE_W a 1 0", 1);
+    //RowParser **string_list = parse(circuit, circuit->context->stack, "var vcc = \"vcc\"; var a = in1; var b = in2; var sum = XOR; var carry = AND; sum a b; carry vcc a b; UPDATE_W vcc 1 0; UPDATE_W a 1 0; UPDATE_W b 1 0", 1);
+    RowParser **string_list = parse(circuit, circuit->context->stack, "var loop_wire = \"loop_wire\"; var not = NOT; not loop_wire loop_wire; UPDATE_W loop_wire 0 1;", 1);
+    printf("\nSTART - PRIMA\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
     {
         print_objects(circuit->context->stack->list.objs[i]);
     }
     printf("FINE\n");
     execute_parsing(circuit);
+    printf("\nSTART - DOPO\n");
+    for(int i = 0; i < circuit->context->stack->list.count; i++)
+    {
+        print_objects(circuit->context->stack->list.objs[i]);
+    }
+    printf("FINE\n");
+    //create_Half_Adder(circuit, 0, 1);
+    //create_Clock_Cicle(circuit);
     run_circuit(circuit);
     return 0;
 }
