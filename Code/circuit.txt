@@ -1,0 +1,14 @@
+var vcc = WIRE "vcc" 1 0;
+var in_a = WIRE "in_a" 1 0;
+var in_b = WIRE "in_b" 1 0;
+var cin = WIRE "cin" 1 0;
+
+var sum1 = XOR in_a in_b;
+var final_sum = XOR sum1 cin;
+
+var carry1 = AND vcc in_a in_b;
+var carry2 = AND vcc sum1 cin;
+
+var final_carry = OR carry1 carry2;
+
+PRINT final_sum final_carry;
