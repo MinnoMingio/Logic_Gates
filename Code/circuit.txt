@@ -3,5 +3,5 @@ var input_wire = WIRE "and_input_wire" 1 0;
 var a_wire = WIRE "and_a_wire" 0 0;
 var b_wire = WIRE "and_b_wire" 0 0;
 OR a_wire b_wire;
-a_wire.name = "negro";
+a_wire.name = "ciaonee";
 PRINT a_wire.name;

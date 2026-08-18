@@ -255,6 +255,9 @@ void append_t_to_c(Circuit *circuit, Transistor *transistor)
     circuit->transistor_count++;
 }
 
+CircuitObj *get_prop_value(CircuitObj *dot_obj, char *prop_name);
+void *print_objects(CircuitObj *obj);
+
 char *return_print_objects(CircuitObj *obj)
 {
     char *result = NULL;
@@ -272,6 +275,26 @@ char *return_print_objects(CircuitObj *obj)
             int len = strlen(obj->str) + 6; // "str: " + stringa + '\0'
             result = malloc(len);
             snprintf(result, len, "str: %s", obj->str);
+            break;
+        }
+        case OBJ_WIRE:
+        {
+            // Formato: "wire: <name> (power: <val>)"
+            const char *name = (obj->wire && obj->wire->name) ? obj->wire->name : "(unnamed)";
+            int power = obj->wire ? obj->wire->power : 0;
+            int len = strlen(name) + 32;
+            result = malloc(len);
+            snprintf(result, len, "wire: %s (power: %d)", name, power);
+            break;
+        }
+        case OBJ_TRAN:
+        {
+            // Formato: "transistor: <name> (out: <val>)"
+            const char *name = (obj->transistor && obj->transistor->name) ? obj->transistor->name : "(unnamed)";
+            int out_power = (obj->transistor && obj->transistor->output_wire) ? obj->transistor->output_wire->power : -1;
+            int len = strlen(name) + 36;
+            result = malloc(len);
+            snprintf(result, len, "transistor: %s (out: %d)", name, out_power);
             break;
         }
         case OBJ_LIST:
@@ -340,6 +363,11 @@ char *return_print_objects(CircuitObj *obj)
             int len = strlen(obj->sys->name) + 7; // "func: " + nome + '\0'
             result = malloc(len);
             snprintf(result, len, "var: %s", obj->sys->name);
+            break;
+        }
+        case OBJ_DOT:
+        {
+            result = return_print_objects(get_prop_value(obj->prop.left, obj->prop.name));
             break;
         }
         case OBJ_OP:
@@ -933,7 +961,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
     return rows; 
 }
 
-CircuitObj *get_actual_value(Circuit *circuit, CircuitObj *obj);
+CircuitObj *get_actual_value(CircuitObj *obj);
 
 CircuitObj *search_prop(CircuitObj *obj, char *prop_name)
 {
@@ -947,24 +975,24 @@ CircuitObj *search_prop(CircuitObj *obj, char *prop_name)
     return NULL;
 }
 
-CircuitObj *get_prop_value(Circuit *circuit, CircuitObj *dot_obj, char *prop_name)
+CircuitObj *get_prop_value(CircuitObj *dot_obj, char *prop_name)
 {
-    CircuitObj *real_obj = get_actual_value(circuit, dot_obj);
+    CircuitObj *real_obj = get_actual_value(dot_obj);
     return search_prop(real_obj, prop_name);
 }
 
-CircuitObj *get_actual_value(Circuit *circuit, CircuitObj *obj)
+CircuitObj *get_actual_value(CircuitObj *obj)
 {
     // Se è una variabile e ha un valore associato in 'data', restituiamo il suo valore
     if (obj != NULL && obj->type == OBJ_VAR && obj->sys != NULL && obj->sys->data != NULL)
     {
-        return get_actual_value(circuit, (CircuitObj *)obj->sys->data); 
+        return get_actual_value((CircuitObj *)obj->sys->data); 
     }
     if (obj->type == OBJ_DOT)
     {
         CircuitObj *left = obj->prop.left;
 
-        return get_prop_value(circuit, left, obj->prop.name);
+        return get_prop_value(left, obj->prop.name);
     }
     // Altrimenti è già un valore letterale (es. un INT o una STR) e lo restituiamo così com'è
     return obj;
@@ -995,7 +1023,7 @@ CircuitObj *execute_func(Circuit *circuit, CircuitObj **stack, CircuitObj *curre
 
         param_size++;
         printf("PARAM %d: %s %s ", k - i, return_print_objects(stack[k]), stack[k + 1]->type != 0 && stack[k + 1] != NULL && stack[k + 1]->type != 0 && stack[k + 1]->type != OBJ_FUNC ? "-" : "");
-        append_obj_to_list(params, get_actual_value(circuit, stack[k]));
+        append_obj_to_list(params, get_actual_value(stack[k]));
         // params->list.objs[param_size - 1] = currentToken;
         // params->list.objs[param_size] = NULL;
 
@@ -1024,7 +1052,7 @@ void execute_parsing(Circuit *circuit)
         if (currentToken->type == OBJ_DOT)
         {
             CircuitObj *previous = stack[i - 1];
-            currentToken->prop.left = get_actual_value(circuit, previous);
+            currentToken->prop.left = get_actual_value(previous);
         }
         printf("\n");
         if (currentToken->type == OBJ_OP)
@@ -1036,7 +1064,7 @@ void execute_parsing(Circuit *circuit)
                 CircuitObj *previous = stack[i - 1];
                 
                 //CircuitObj *next = stack[i + 1];
-                CircuitObj *next = get_actual_value(circuit, stack[i + 1]);
+                CircuitObj *next = get_actual_value(stack[i + 1]);
 
                 if (i > 0 && i < stack_count - 1 && previous != NULL && next != NULL)
                 {
@@ -1071,7 +1099,11 @@ void execute_parsing(Circuit *circuit)
                                 prop_addr = dot_obj->props[i]->prop;
                             }
                         }
-                        if((*prop_addr)->type != next->type) perror("TYPE MISMATCH!\n");
+                        if((*prop_addr)->type != next->type) 
+                        {
+                            printf("TYPE MISMATCH!\n"); 
+                            return;
+                        }
                         if (next->type == OBJ_FUNC)
                         {
                             if(stack[i+2]->type == 0)
@@ -1110,11 +1142,11 @@ void execute_parsing(Circuit *circuit)
 
         if(nextToken != NULL && nextToken->type == OBJ_DOT)
         {
-            currentToken = get_actual_value(circuit, nextToken);
+            currentToken = get_actual_value(nextToken);
         }
         else if(currentToken != NULL && currentToken->type == OBJ_VAR)
         {
-            CircuitObj *innerObj = get_actual_value(circuit, stack[i]);
+            CircuitObj *innerObj = get_actual_value(stack[i]);
 
             if(i < stack_count - 1 && stack[i+1]->type != OBJ_OP) innerObj->mode = READ_WRITE;
             currentToken = innerObj;
@@ -1127,6 +1159,7 @@ void execute_parsing(Circuit *circuit)
 
                 printf("FUNC TROVATA! (%s): ", currentToken->sys->name);
                 execute_func(circuit, stack, currentToken, i);
+                printf("\n");
                 break;
             
             default:
@@ -1369,9 +1402,11 @@ void *Update_Wire_Wrap(Circuit *circuit, CircuitObj *params, int count)
 CircuitObj *Wire_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
     CircuitObj *circuitObj = malloc(sizeof(CircuitObj));
+
     char *name = strdup(params->list.objs[0]->str);
     int power = params->list.objs[1]->i;
     int driven = params->list.objs[2]->i;
+
     Wire *wire = create_wire(circuit, name, power);
     wire->driven = driven;
     circuitObj->type = OBJ_WIRE;
@@ -1394,7 +1429,7 @@ CircuitObj *Print_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
     for(int i = 0; i < count; i++)
     {
-        CircuitObj *obj = get_actual_value(circuit, params->list.objs[i]);
+        CircuitObj *obj = get_actual_value(params->list.objs[i]);
         if(obj->type == OBJ_WIRE)
         {
             printf(">> WIRE '%s' -> Power: %d\n", obj->wire->name, obj->wire->power);
