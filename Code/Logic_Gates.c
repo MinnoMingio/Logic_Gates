@@ -72,7 +72,7 @@ typedef struct Operator
 typedef struct ObjProp
 {
     char *name;
-    CircuitObj **prop; // doppio puntatore in quanto voglio l'indirizzo di memoria dell'oggetto che stiamo puntando!
+    CircuitObj *prop; // doppio puntatore in quanto voglio l'indirizzo di memoria dell'oggetto che stiamo puntando!
 } ObjProp;
 
 typedef struct CircuitObj 
@@ -81,19 +81,20 @@ typedef struct CircuitObj
     int mode;
     union
     {
-        int i;
-        char *str;
-        Symbol *sys;
+        // PROVO A METTERE UN * IN PIU' DI FRONTE AD OGNI TIPO PER POTER PASSARE IL TIPO ATTRAVERSO L'INDIRIZZO E NON SOLO VALORE (COSI' DA FACILITARE LE PROPS).
+        int *i;
+        char **str;
+        Symbol **sys;
         Operator *op;
-        Wire *wire;
-        Transistor *transistor;
+        Wire **wire;
+        Transistor **transistor;
         Circuit *circuit;
         struct List
         {
             CircuitObj **objs;
             int count;
         } list;
-        struct Prop
+        struct Dot
         {
             CircuitObj *left;
             char *name;
@@ -148,6 +149,7 @@ Transistor *create_transistor(char *name, int wires);
 CircuitObj *create_obj()
 {
     CircuitObj *obj = malloc(sizeof(CircuitObj));
+    obj->type = 0;
     obj->mode = READ_WRITE;
 
     obj->props = NULL;
@@ -198,6 +200,7 @@ CircuitObj *create_tran_obj(char *name, int wires)
     return obj;
 }
 
+/*
 void add_prop(CircuitObj *circuitObj, CircuitObj *prop, char *name)
 {
     int length = circuitObj->prop_count;
@@ -240,6 +243,36 @@ void add_prop(CircuitObj *circuitObj, CircuitObj *prop, char *name)
 
     circuitObj->prop_count = length+1;
 }
+*/
+
+void add_prop(CircuitObj *circuitObj, void *prop, char *name)
+{
+    int length = circuitObj->prop_count;
+    circuitObj->props = realloc(circuitObj->props, sizeof(ObjProp*) * (length+1));
+    circuitObj->props[length] = malloc(sizeof(ObjProp));
+    circuitObj->props[length]->name = strdup(name);
+    circuitObj->props[length]->prop = prop;
+
+    circuitObj->prop_count = length+1;
+}
+
+/*
+void add_int_prop(CircuitObj *circuitObj, int **i, char *name)
+{
+    int length = circuitObj->prop_count;
+    circuitObj->props = realloc(circuitObj->props, sizeof(ObjProp*) * (length+1));
+    circuitObj->props[length] = malloc(sizeof(ObjProp));
+    circuitObj->props[length]->name = strdup(name);
+    circuitObj->props[length]->prop = malloc(sizeof(CircuitObj*));
+
+    (*circuitObj->props[length]->prop) = malloc(sizeof(CircuitObj));
+
+    (*circuitObj->props[length]->prop)->type = OBJ_INT;
+    (*circuitObj->props[length]->prop)->i = prop->i;
+    
+    circuitObj->prop_count = length+1;
+}
+*/
 
 Operator *create_op(char *name, OpType type)
 {
@@ -847,9 +880,9 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
 
 CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
 {
-    CircuitObj *circuitObj = malloc(sizeof(CircuitObj));
-    circuitObj->type = 0;
-    circuitObj->mode = READ_WRITE;
+    CircuitObj *circuitObj = create_obj();// malloc(sizeof(CircuitObj));
+    //circuitObj->type = 0;
+    //circuitObj->mode = READ_WRITE;
 
     char *end = *token;
 
@@ -972,9 +1005,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
 
         while(token[0] != ';' && token[0] != '\n' && token[0] != '\0')
         {
-            CircuitObj *circuitObj = malloc(sizeof(CircuitObj));
-            circuitObj->type = 0;
-            circuitObj->mode = READ_WRITE;
+            CircuitObj *circuitObj = create_obj();
 
             while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
 
@@ -987,7 +1018,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
             if (token[0] == '[')
             {
                 is_list = 1;
-                //printf("START: %s\n", token);
+
                 char *start = token;
                 while (token[0] != ']')
                 {
@@ -995,8 +1026,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 }
                 char *end = token;
                 token++;    
-                //printf("END: %s\n", token);
-                //printf("C: %c", end[0]);
+                
                 circuitObj->type = OBJ_LIST;
                 circuitObj->list.objs = NULL;
                 circuitObj->list.count = 0;
@@ -1005,7 +1035,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 char *list_txt = malloc(new_length + 1);
                 memcpy(list_txt, start + 1, new_length-1);
                 list_txt[new_length] = '\0';
-                parse(circuit, circuitObj, list_txt, 0); // non so se mettere ciruitObj oppure dest come secondo parametro
+                parse(circuit, circuitObj, list_txt, 0); // metto ciruitObj come secondo parametro in quanto e una cazzo di lista e quindi niente
             }
 
             if(!is_list)
@@ -1048,18 +1078,14 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
         }
         if(add_separator && element_count > 0)
         {
-            CircuitObj *circuitObj = malloc(sizeof(CircuitObj));
-            circuitObj->type = 0;
+            CircuitObj *circuitObj = create_obj();
             append_obj_to_list(circuit->context->stack, circuitObj);
         }
 
         if(token[0] == ';' || token[0] == '\n') token++;
         if(token[0] != ';' && element_count > 0) row_count++;
-        //printf("\n");
     }
-    //final_string[count] = NULL;
     rows[row_count] = NULL;
-    //printf("\nPARSE END\n");
     return rows; 
 }
 
@@ -1071,7 +1097,7 @@ CircuitObj *search_prop(CircuitObj *obj, char *prop_name)
     {
         if(strcmp(obj->props[i]->name, prop_name) == 0)
         {
-            return *(obj->props[i]->prop);
+            return obj->props[i]->prop;
         }
     }
     return NULL;
@@ -1175,7 +1201,6 @@ void execute_parsing(Circuit *circuit)
                 {
                     if (previous->type == OBJ_VAR)
                     {
-                        
                         previous->mode = READ_ONLY;
                         next->mode = READ_ONLY;
 
@@ -1201,7 +1226,7 @@ void execute_parsing(Circuit *circuit)
                         {
                             if (strcmp(dot_obj->props[i]->name, previous->prop.name) == 0)
                             {
-                                prop_addr = dot_obj->props[i]->prop;
+                                //prop_addr = dot_obj->props[i]->prop;
                             }
                         }
                         if((*prop_addr)->type != next->type) 
@@ -1510,22 +1535,22 @@ CircuitObj *Wire_Wrap(Circuit *circuit, CircuitObj *params, int count)
 
     CircuitObj *circuitObj = create_wire_obj(circuit, name, power);
     circuitObj->wire->driven = driven; 
-
+     
     CircuitObj *name_prop = create_str_obj(circuitObj->wire->name);
-    add_prop(circuitObj, name_prop, "name");
-
+    add_prop(circuitObj, &circuitObj->wire->name, "name");
+    
     CircuitObj *power_prop = create_int_obj(circuitObj->wire->power);
     add_prop(circuitObj, power_prop, "power");
-
-    /*
-    circuitObj->props = malloc(sizeof(ObjProp*)); 
+   
+    /* 
+    circuitObj->props = malloc(sizeof(ObjProp*));
     circuitObj->props[0] = malloc(sizeof(ObjProp));
     circuitObj->props[0]->name = "name";
     circuitObj->props[0]->prop = malloc(sizeof(CircuitObj*));
 
     (*circuitObj->props[0]->prop) = malloc(sizeof(CircuitObj));
     (*circuitObj->props[0]->prop)->type = OBJ_STR;
-    (*circuitObj->props[0]->prop)->str = wire->name;
+    (*circuitObj->props[0]->prop)->str = circuitObj->wire->name;
     circuitObj->prop_count = 1;
     */
 
@@ -1553,7 +1578,7 @@ CircuitObj *Print_Wrap(Circuit *circuit, CircuitObj *params, int count)
         }
         else if(obj->type == OBJ_INT)
         {
-            printf(">> INT -> %s\n", obj->i);
+            printf(">> INT -> %d\n", obj->i);
         }
         else if(obj->type == OBJ_LIST)
         {
@@ -1612,19 +1637,10 @@ int main(void)
     append_sym_to_table(circuit, create_symbol("NAND", Nand_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("XOR", Xor_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("UPDATE_W", Update_Wire_Wrap, SYM_FUNC, 3));
-    //append_sym_to_table(circuit, create_symbol("UPDATE_T", Update_Transistor_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("WIRE", Wire_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("PRINT", Print_Wrap, SYM_FUNC, 1));
-    append_sym_to_table(circuit, create_symbol("RUN", run_circuit, SYM_FUNC, 0));
+    append_sym_to_table(circuit, create_symbol("RUN", Run_Wrap, SYM_FUNC, 0));
 
-    //printf("\n\n\n");
-
-    //RowParser **string_list = parse(circuit, circuit->context->stack, "var a = in1; var b = in2; var ciao = XOR; ciao a b; UPDATE_W a 1 0", 1);
-    //RowParser **string_list = parse(circuit, circuit->context->stack, "var vcc = \"vcc\"; var a = in1; var b = in2; var sum = XOR; var carry = AND; sum a b; carry vcc a b; UPDATE_W vcc 1 0; UPDATE_W a 1 0; UPDATE_W b 1 0", 1);
-    //RowParser **string_list = parse(circuit, circuit->context->stack, "var loop_wire = \"loop_wire\"; var not = NOT; not loop_wire loop_wire; UPDATE_W loop_wire 0 1;", 1);
-    //RowParser **string_list = parse(circuit, circuit->context->stack, "var loop_wire = \"loop_wire\"; var not = NOT loop_wire loop_wire; UPDATE_W loop_wire 0 1; not;", 1);
-    //RowParser **string_list = parse(circuit, circuit->context->stack, "var loop_wire = WIRE \"loop_wire\" 1 0; var not = NOT; not loop_wire loop_wire;", 1);
-    //RowParser **string_list = parse(circuit, circuit->context->stack, "var input_wire = WIRE \"and_input_wire\" 1 0; var a_wire = WIRE \"and_a_wire\" 0 0; var b_wire = WIRE \"and_b_wire\" 0 0; OR a_wire b_wire;", 1);
 
     FILE *fp = fopen("circuit.txt", "r");
     fseek(fp, 0, SEEK_END);
@@ -1635,10 +1651,10 @@ int main(void)
 
     fread(circuit_txt, file_size, 1, fp);
     circuit_txt[file_size] = '\0';
+    fclose(fp);
     
     RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt,1);
 
-    /*
     printf("----------");
     printf("\nSTART - PRIMA\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
@@ -1646,22 +1662,15 @@ int main(void)
         print_objects(circuit->context->stack->list.objs[i]);
     }
     printf("FINE\n");
-    */
 
     execute_parsing(circuit);
 
-    /*
     printf("----------");
     printf("\nSTART - DOPO\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
     {
         print_objects(circuit->context->stack->list.objs[i]);
     }
-    printf("FINE\n");
-    */
 
-    //create_Half_Adder(circuit, 0, 1);
-    //create_Clock_Cicle(circuit);
-    //run_circuit(circuit);
     return 0;
 }
