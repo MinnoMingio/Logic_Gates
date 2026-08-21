@@ -5,16 +5,17 @@
 #include<string.h>
 #include<ctype.h>
 
-#define OBJ_INT  1
-#define OBJ_STR  2
-#define OBJ_LIST 3
-#define OBJ_TRAN 4
-#define OBJ_WIRE 5
-#define OBJ_FUNC 6
-#define OBJ_VAR  7
-#define OBJ_OP   8
-#define OBJ_DOT  9
-#define OBJ_VOID 10
+#define OBJ_INT   1
+#define OBJ_STR   2
+#define OBJ_LIST  3
+#define OBJ_TRAN  4
+#define OBJ_WIRE  5
+#define OBJ_FUNC  6
+#define OBJ_VAR   7
+#define OBJ_OP    8
+#define OBJ_DOT   9
+#define OBJ_INDEX 10
+#define OBJ_VOID  11
 
 #define READ_ONLY  0
 #define READ_WRITE 1
@@ -38,7 +39,6 @@ typedef enum
     OP_ASSIGN,
     OP_MATH,
 } OpType;
-
 
 typedef struct Wire{
     char *name;
@@ -98,6 +98,7 @@ typedef struct CircuitObj
         {
             CircuitObj *left;
             char *name;
+            CircuitObj *index;
         } prop;
     };
     ObjProp **props;
@@ -908,6 +909,7 @@ void append_obj_to_list(CircuitObj *list_obj, CircuitObj *obj)
 }
 
 RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separator);
+CircuitObj *get_actual_value(CircuitObj *obj);
 
 CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
 {
@@ -942,6 +944,12 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
                 //circuitObj->type = OBJ_VAR;
                 sym = circuit->context->symTable->sym_list[i];
                 circuitObj = create_sym_obj(sym);
+
+                //if(get_actual_value(circuitObj)->type == OBJ_LIST && end[0] == '[')
+                //{
+                    //printf("\n QUI! \n%c\n", end[0]);
+                    //printf("INDEX!\n");
+                //}
                 //*circuitObj->sys = sym;
                 break;
             }
@@ -1071,6 +1079,13 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 memcpy(list_txt, start + 1, new_length-1);
                 list_txt[new_length] = '\0';
                 parse(circuit, circuitObj, list_txt, 0); // metto ciruitObj come secondo parametro in quanto e una cazzo di lista e quindi niente
+
+                //-------------- Controlliamo che subito dopo non ci sia un index '[lista][0]'.
+                end = token++;
+                if(end[0] == '[')
+                {
+                    printf("INDEX!\n");
+                }
             }
 
             if(!is_list)
@@ -1093,6 +1108,14 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                         parse(circuit, dest, list_txt, 0);
                         found = 1;
                         start = token;
+                    }else if(token[0] == '[')
+                    {
+                        end = token;
+                        int new_length = end - start;
+                        char *list_txt = malloc(new_length + 1);
+                        memcpy(list_txt, start, new_length);
+                        list_txt[new_length] = '\0';
+                        printf("INDEX! %s.\n", list_txt);
                     }
 
                     token++;
@@ -1207,6 +1230,7 @@ CircuitObj *execute_func(Circuit *circuit, CircuitObj **stack, CircuitObj *curre
     {
         CircuitObj *returned_obj = ((CircuitFunc)currentFunc->data)(circuit, params, param_size);
         //if(print) printf("\n");
+        free(params); // Devi liberare anche i figli della list obj
         if(print) printf("------------------------------------------\n");
         return returned_obj;
     }else
@@ -1429,14 +1453,50 @@ void *add_tran_props(CircuitObj *circuitObj)
     name_prop->type = OBJ_STR;
     name_prop->str = &((*circuitObj->transistor)->name);
     add_prop(circuitObj, name_prop, "name");
-    
+   
+    CircuitObj *state_prop = create_obj();
+    state_prop->type = OBJ_INT;
+    state_prop->i = &((*circuitObj->transistor)->state);
+    add_prop(circuitObj, state_prop, "state");
+
+    //CircuitObj *in_wire = create_obj();
+    //in_wire->type = OBJ_WIRE;
+    //in_wire->wire = &((*circuitObj->transistor)->input_wire);
+    //add_prop(circuitObj, in_wire, "input_wire");
+
+    CircuitObj *in_wire = create_list_obj();
+    for(int i = 0; i < (*circuitObj->transistor)->count; i++)
+    {
+        CircuitObj *wire_obj = create_obj();
+        wire_obj->type = OBJ_WIRE;
+        wire_obj->wire = &((*circuitObj->transistor)->input_wire[i]);
+
+        add_wire_props(wire_obj);
+        append_obj_to_list(in_wire, wire_obj);
+    }
+    add_prop(circuitObj, in_wire, "input_wires");
+
     CircuitObj *out_wire = create_obj();
     out_wire->type = OBJ_WIRE;
     out_wire->wire = &((*circuitObj->transistor)->output_wire);
     add_prop(circuitObj, out_wire, "out_wire");
 
+    CircuitObj *control_wire = create_obj();
+    control_wire->type = OBJ_WIRE;
+    control_wire->wire = &((*circuitObj->transistor)->control_wire);
+    add_prop(circuitObj, control_wire, "control_wire");
+
+    //char *name;
+    //int state; // if it's closed or open
+    //int invert;
+    //struct Wire **input_wire;
+    //struct Wire *output_wire;
+    //struct Wire *control_wire;
+    //int count;
+
     // NUOVO: registra le props sul wire object stesso
     add_wire_props(out_wire); 
+    add_wire_props(control_wire);
 }
 
 CircuitObj *Or_Wrap(Circuit *circuit, CircuitObj *params, int count)
@@ -1796,7 +1856,7 @@ int main(void)
     
     RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt,1);
 
-    
+   /*
     printf("----------");
     printf("\nSTART - PRIMA\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
@@ -1804,11 +1864,11 @@ int main(void)
         print_objects(circuit->context->stack->list.objs[i]);
     }
     printf("FINE\n");
-    
+    */
 
     execute_parsing(circuit);
 
-    
+    /*
     printf("----------");
     printf("\nSTART - DOPO\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
@@ -1816,7 +1876,7 @@ int main(void)
         print_objects(circuit->context->stack->list.objs[i]);
     }
     printf("FINE\n");
-    
+    */
 
     return 0;
 }
