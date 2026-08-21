@@ -14,6 +14,6 @@ PRINT a_wire.power;
 PRINT a_wire;
 and.name = "AND";
 PRINT and;
-var lista = [1 or "ciao"];
-[1 2 3][1];
+var lista = [1 and "ciao"];
+PRINT lista[1].out_wire.name;
 PRINT lista;
