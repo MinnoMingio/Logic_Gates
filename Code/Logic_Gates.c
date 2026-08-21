@@ -210,7 +210,6 @@ CircuitObj *create_tran_obj(char *name, int wires)
     return obj;
 }
 
-
 Symbol *create_symbol(char *name, void *data, SymType type, int param_count);
 
 CircuitObj *create_sym_obj(Symbol *sym)
@@ -225,7 +224,6 @@ CircuitObj *create_sym_obj(Symbol *sym)
     case SYM_VAR:
         obj->type = OBJ_VAR;
         break;
-    
     default:
         break;
     }
@@ -1006,13 +1004,22 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
     else if (isdigit(final_token[0]))
     {
         circuitObj = create_int_obj(atoi(final_token)); 
-    }else if(final_token[0] == '"' && final_token[length-1] == '"')
+    }else if((*token)[0] == '"')
     {
+        (*token)++;
+        start = *token;
+        while((*token)[0] != '"')
+        {
+            (*token)++;
+        }
+        end = *token;
+        (*token)++;
         //circuitObj->type = OBJ_STR;
-        int new_length = length - 2;
+        length = end - start;
+        int new_length = length;
         circuitObj = create_str_obj(new_length+1);
         //circuitObj->str = malloc(new_length + 1);
-        memcpy(*circuitObj->str, start + 1, new_length);
+        memcpy(*circuitObj->str, start, new_length);
         //circuitObj->str[new_length] = '\0';
         
     }
@@ -1079,7 +1086,12 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
             int is_list = 0;
 
             char *previous = token-1;
-            if (token[0] == '[' && (previous[0] == ' ' || previous[0] == '\n' || previous[0] == ';'))
+
+            if (token[0] == '\"')
+            {
+                circuitObj = parse_obj(circuit, &token, token);
+            }
+            else if (token[0] == '[' && (previous[0] == ' ' || previous[0] == '\n' || previous[0] == ';'))
             {
                 is_list = 1;
 
@@ -1101,19 +1113,18 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 list_txt[new_length] = '\0';
                 parse(circuit, circuitObj, list_txt, 0); // metto ciruitObj come secondo parametro in quanto e una cazzo di lista e quindi niente
 
-                //-------------- Controlliamo che subito dopo non ci sia un index '[lista][0]'.
                 end = token++;
-                if(end[0] == '[')
-                {
-                    printf("INDEX!\n");
-                }
+                //if(end[0] == '[')
+                //{
+                    //printf("INDEX!\n");
+                //}
             }
-
-            if(!is_list)
+            else if(!is_list)
             {
                 char *start = token;
                 char *end = token;
                 int found = 0;
+
                 while (isgraph(token[0]) && token[0] != ';')
                 {
                     if (token[0] == '.' || token[0] == '[')
@@ -1197,7 +1208,7 @@ CircuitObj *get_actual_value(CircuitObj *obj)
     }
     if (obj->type == OBJ_INDEX)
     {
-        CircuitObj *left = obj->bracket.left;
+        CircuitObj *left = get_actual_value(obj->bracket.left);
         return left->list.objs[*obj->bracket.index->i];
     }
     // Altrimenti è già un valore letterale (es. un INT o una STR) e lo restituiamo così com'è
@@ -1321,7 +1332,7 @@ void execute_parsing(Circuit *circuit)
                     if (previous->type == OBJ_DOT)
                     {
                         CircuitObj **prop_addr = NULL; 
-                        CircuitObj *dot_obj = previous->prop.left;
+                        CircuitObj *dot_obj = get_actual_value(previous->prop.left);
                         for (int i = 0; i < dot_obj->prop_count; i++)
                         {
                             if (strcmp(dot_obj->props[i]->name, previous->prop.name) == 0)
@@ -1334,6 +1345,47 @@ void execute_parsing(Circuit *circuit)
                             printf("TYPE MISMATCH!\n");
                             return;
                         }
+                        if (next->type == OBJ_FUNC)
+                        {
+                            if(stack[i+2]->type == 0)
+                            {
+                                *(prop_addr) = next;
+                            }else
+                            {
+                                *(prop_addr) = execute_func(circuit, stack, next, i+1, 0);
+                            }                        
+                        }else
+                        {
+                            //*(prop_addr) = next; // PROBABILMENTE QUA DEVI ACCEDERE AL TIPO CORRETTO ATTRAVERSO INDIRIZZO (DAL DOPPIO PUNTATORE) E CAMBIARLO
+                            {
+                                CircuitObj *prop_obj = *prop_addr;
+                                switch (prop_obj->type)
+                                {
+                                case OBJ_STR:
+                                    *(prop_obj->str) = *(next->str);
+                                    break;
+                                case OBJ_INT:
+                                    *(prop_obj->i) = *(next->i);
+                                    break;
+                                default:
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (previous->type == OBJ_INDEX)
+                    {
+                        CircuitObj **prop_addr = NULL; 
+                        CircuitObj *bracket_obj = get_actual_value(previous->bracket.left);
+                        print_objects(bracket_obj);
+
+                        prop_addr = &bracket_obj->list.objs[*previous->bracket.index->i];
+                        print_objects(*prop_addr);
+                        //if((*prop_addr)->type != next->type) 
+                        //{
+                            //printf("TYPE MISMATCH!\n");
+                            //return;
+                        //}
                         if (next->type == OBJ_FUNC)
                         {
                             if(stack[i+2]->type == 0)
@@ -1900,7 +1952,6 @@ int main(void)
     append_sym_to_table(circuit, create_symbol("WIRE", Wire_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("PRINT", Print_Wrap, SYM_FUNC, 1));
     append_sym_to_table(circuit, create_symbol("RUN", Run_Wrap, SYM_FUNC, 0));
-
 
     FILE *fp = fopen("circuit.txt", "rb");
     fseek(fp, 0, SEEK_END);
