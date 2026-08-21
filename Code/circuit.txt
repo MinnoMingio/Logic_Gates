@@ -1,6 +1,6 @@
 var person_name = "Martino";
 var input_wire = WIRE "and_input_wire" 1 0;
-var a_wire = WIRE "and_a_wire" 0 0;
+var a_wire = WIRE "and_a_wire" 1 0;
 var b_wire = WIRE "and_b_wire" 1 0;
 var and = AND input_wire a_wire b_wire;
 PRINT and.out_wire.power;
@@ -19,6 +19,6 @@ var lista = [array and "ciao"];
 lista[2] = "mondo";
 lista[0][0] = 5;
 PRINT lista[0][0];
-PRINT [1 [1 2 3] 7 8][0];
+PRINT [1 [1 2 3] 7 8][2];
 PRINT lista;
 PRINT array;

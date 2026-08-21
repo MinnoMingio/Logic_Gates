@@ -1314,15 +1314,21 @@ void execute_parsing(Circuit *circuit)
     for(int i = 0; i < stack_count; i++)
     {
         CircuitObj *currentToken = stack[i];
+        CircuitObj *previous = NULL; 
+        CircuitObj *next = NULL;
+        if(i > 0) previous = stack[i-1];
+        if(i < stack_count-1) next = stack[i+1];
 
         if (currentToken->type == OBJ_DOT)
         {
-            CircuitObj *previous = stack[i - 1];
+            //CircuitObj *
+            previous = stack[i - 1];
             currentToken->prop.left = get_actual_value(previous);
         }
         if(currentToken->type == OBJ_INDEX)
         {
-            CircuitObj *previous = stack[i - 1];
+            //CircuitObj *
+            previous = stack[i - 1];
             currentToken->bracket.left = get_actual_value(previous);
         }
         if (currentToken->type == OBJ_OP)
@@ -1331,10 +1337,12 @@ void execute_parsing(Circuit *circuit)
             {
             case OP_ASSIGN:
             {
-                CircuitObj *previous = stack[i - 1];
+                //CircuitObj *
+                previous = stack[i - 1];
                 
                 //CircuitObj *next = stack[i + 1];
-                CircuitObj *next = get_actual_value(stack[i + 1]);
+                //CircuitObj *
+                next = get_actual_value(next);
 
                 if (i > 0 && i < stack_count - 1 && previous != NULL && next != NULL)
                 {
@@ -1452,16 +1460,18 @@ void execute_parsing(Circuit *circuit)
                 break;
 
             }
+            case OP_ADD:
+                break;
             default:
                 break;
             }
         }
         
         currentToken = stack[i];
-        CircuitObj *nextToken = NULL;
-        if(i + 1 < stack_count-1) nextToken = stack[i+1];
+        //CircuitObj *nextToken = NULL;
+        //if(i + 1 < stack_count-1) nextToken = stack[i+1];
 
-        if((nextToken != NULL) && (nextToken->type == OBJ_DOT || nextToken->type == OBJ_INDEX))
+        if((next != NULL) && (next->type == OBJ_DOT || next->type == OBJ_INDEX))
         {
             int k = i+1;
             CircuitObj *left_obj = stack[i];
