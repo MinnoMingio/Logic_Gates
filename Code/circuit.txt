@@ -19,5 +19,6 @@ var lista = [array and "ciao"];
 lista[2] = "mondo";
 lista[0][0] = 5;
 PRINT lista[0][0];
-PRINT lista[2];
+PRINT [1 [1 2 3] 7 8][0];
 PRINT lista;
+PRINT array;

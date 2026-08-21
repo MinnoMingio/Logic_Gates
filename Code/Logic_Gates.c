@@ -37,7 +37,10 @@ typedef enum
 typedef enum
 {
     OP_ASSIGN,
-    OP_MATH,
+    OP_ADD,
+    OP_SUB,
+    OP_MOL,
+    OP_DIV,
 } OpType;
 
 typedef struct Wire{
@@ -971,6 +974,13 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start)
         circuitObj->type = OBJ_OP;
         circuitObj->op = op;
     }
+    else if (strcmp(final_token, "+") == 0)
+    {
+        Operator *op = create_op(final_token, OP_ADD);
+        circuitObj = create_obj();
+        circuitObj->type = OBJ_OP;
+        circuitObj->op = op;
+    }
     else if (strcmp(final_token, "var") == 0)
     {
         while (isspace((*token)[0]) && (*token)[0] != '\n' && (*token)[0] != ';')
@@ -1091,40 +1101,58 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
             {
                 circuitObj = parse_obj(circuit, &token, token);
             }
-            else if (token[0] == '[' && (previous[0] == ' ' || previous[0] == '\n' || previous[0] == ';'))
+            else if (token[0] != ']' && token[0] == '[' && (previous[0] == ' ' || previous[0] == '\0' || previous[0] == '\n' || previous[0] == ';'))
             {
-                is_list = 1;
 
+                is_list = 1;
+                printf("INIZIO LISTA\n%s\n", token);
+
+                token++;
                 char *start = token;
-                while (token[0] != ']')
+                int bracket_balance = 1;
+                int brack_offset = 0;
+                printf("PRIMA DEL WHILE\n%s\n", token);
+                while (token[0] != '\0' && bracket_balance > 0)
                 {
+                    if(token[0] == '[')
+                    {
+                        brack_offset = 1;
+                        bracket_balance++;
+                    }
+                    if(token[0] == ']')
+                    {
+                        bracket_balance--;
+                    }
+                    if(bracket_balance > 0)
                     token++;
                 }
                 char *end = token;
-                token++;    
+                //while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
                 
+                //printf("DOPO IL WHILE\n%s\n", token)
                 circuitObj->type = OBJ_LIST;
                 circuitObj->list.objs = NULL;
                 circuitObj->list.count = 0;
 
-                int new_length = end - start;
+                int new_length = end - start; // Esclusa l'ultima quadra
                 char *list_txt = malloc(new_length + 1);
-                memcpy(list_txt, start + 1, new_length-1);
+                //int offset = 1 + brack_offset;
+                memcpy(list_txt, start, new_length);
                 list_txt[new_length] = '\0';
+                //printf("PARSING QUESTO/I ELEMENTO: %s\n", list_txt);
                 parse(circuit, circuitObj, list_txt, 0); // metto ciruitObj come secondo parametro in quanto e una cazzo di lista e quindi niente
+                free(list_txt);
 
-                end = token++;
-                //if(end[0] == '[')
-                //{
-                    //printf("INDEX!\n");
-                //}
+                printf("TOKEN 0: %c, TOKEN 1: %c\n", token[0], token[1]);
+                if(token[0] == ']' && token[1] != '[') token++;
+                printf("TOKEN: %s\n", token);
             }
             else if(!is_list)
             {
+                if(token[0] == ']') token++;
                 char *start = token;
                 char *end = token;
                 int found = 0;
-
                 while (isgraph(token[0]) && token[0] != ';')
                 {
                     if (token[0] == '.' || token[0] == '[')
@@ -1295,7 +1323,7 @@ void execute_parsing(Circuit *circuit)
         if(currentToken->type == OBJ_INDEX)
         {
             CircuitObj *previous = stack[i - 1];
-            currentToken->prop.left = get_actual_value(previous);
+            currentToken->bracket.left = get_actual_value(previous);
         }
         if (currentToken->type == OBJ_OP)
         {
@@ -1377,10 +1405,10 @@ void execute_parsing(Circuit *circuit)
                     {
                         CircuitObj **prop_addr = NULL; 
                         CircuitObj *bracket_obj = get_actual_value(previous->bracket.left);
-                        print_objects(bracket_obj);
+                        //print_objects(bracket_obj);
 
                         prop_addr = &bracket_obj->list.objs[*previous->bracket.index->i];
-                        print_objects(*prop_addr);
+                        //print_objects(*prop_addr);
                         //if((*prop_addr)->type != next->type) 
                         //{
                             //printf("TYPE MISMATCH!\n");
@@ -1980,7 +2008,7 @@ int main(void)
 
     execute_parsing(circuit);
 
-    /*
+    
     printf("----------");
     printf("\nSTART - DOPO\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
@@ -1988,7 +2016,7 @@ int main(void)
         print_objects(circuit->context->stack->list.objs[i]);
     }
     printf("FINE\n");
-    */
+    
 
     return 0;
 }
