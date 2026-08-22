@@ -602,15 +602,15 @@ void *print_objects(CircuitObj *obj)
             printf("op: %s\n", obj->op->name);
             break;
         case OBJ_DOT:
-            printf("attribute: %s\n", obj->prop.name);
+            printf("attribute: %s\n", obj->prop.name != NULL ? obj->prop.name : "none");
             printf("left attribute: ");
             if(obj->prop.left != NULL)
             print_objects(obj->prop.left);
             break;
         case OBJ_INDEX:
-            printf("Index: %d\n", *obj->bracket.index->i);
+            printf("Index: %d\n", obj->bracket.index != NULL ? *obj->bracket.index->i : -1);
             printf("left element: ");
-            if(obj->prop.left != NULL)
+            if(obj->bracket.left != NULL)
             print_objects(obj->bracket.left);
             break;
 
@@ -1321,13 +1321,11 @@ void execute_parsing(Circuit *circuit)
 
         if (currentToken->type == OBJ_DOT)
         {
-            //CircuitObj *
             previous = stack[i - 1];
             currentToken->prop.left = get_actual_value(previous);
         }
         if(currentToken->type == OBJ_INDEX)
         {
-            //CircuitObj *
             previous = stack[i - 1];
             currentToken->bracket.left = get_actual_value(previous);
         }
@@ -1461,6 +1459,38 @@ void execute_parsing(Circuit *circuit)
 
             }
             case OP_ADD:
+                if (i > 0 && i < stack_count - 1)
+                {
+                    CircuitObj *left = get_actual_value(stack[i - 1]);
+                    CircuitObj *right = get_actual_value(stack[i + 1]);
+
+                    if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
+                    {
+                        // 1. Calcola la somma e crea il nuovo oggetto
+                        int sum_val = *(left->i) + *(right->i);
+                        CircuitObj *result_obj = create_int_obj(sum_val);
+
+                        // 2. Sostituisci il primo elemento con il risultato
+                        stack[i - 1] = result_obj;
+
+                        // 3. Compatta lo stack eliminando l'operatore e il secondo operando
+                        for (int k = i; k < stack_count - 2; k++)
+                        {
+                            stack[k] = stack[k + 2];
+                        }
+
+                        // 4. Aggiorna i contatori dello stack
+                        circuit->context->stack->list.count -= 2;
+                        stack_count -= 2;
+
+                        // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
+                        i--;
+                    }
+                    else
+                    {
+                        printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    }
+                }
                 break;
             default:
                 break;
@@ -1468,8 +1498,6 @@ void execute_parsing(Circuit *circuit)
         }
         
         currentToken = stack[i];
-        //CircuitObj *nextToken = NULL;
-        //if(i + 1 < stack_count-1) nextToken = stack[i+1];
 
         if((next != NULL) && (next->type == OBJ_DOT || next->type == OBJ_INDEX))
         {
@@ -1492,24 +1520,6 @@ void execute_parsing(Circuit *circuit)
             }
             currentToken = get_actual_value(left_obj);
         }
-        /*
-        else if (nextToken != NULL && nextToken->type == OBJ_INDEX)
-        {
-            int k = i+1;
-            CircuitObj *left_obj = stack[i];
-            while(stack[k]->type == OBJ_INDEX)
-            {
-                stack[k]->bracket.left = get_actual_value(left_obj);
-                left_obj = get_actual_value(stack[k]);
-                k++;
-            }
-            currentToken = get_actual_value(left_obj);
-
-            printf("ATTENZIONE!\n");
-            print_objects(currentToken);
-            printf("--------------\n");
-        }
-        */
         else if(currentToken != NULL && currentToken->type == OBJ_VAR)
         {
             CircuitObj *innerObj = get_actual_value(stack[i]);
