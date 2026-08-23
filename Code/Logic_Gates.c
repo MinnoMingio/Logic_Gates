@@ -618,6 +618,8 @@ void *print_objects(CircuitObj *obj)
             printf("left prop: ");
             if(obj->prop.left != NULL)
             print_objects(obj->prop.left);
+            else
+            printf("\n");
             break;
         case OBJ_INDEX:
             printf("Index: ");
@@ -632,6 +634,7 @@ void *print_objects(CircuitObj *obj)
             printf("left element: ");
             if(obj->bracket.left != NULL)
             print_objects(obj->bracket.left);
+            else
             printf("\n");
             break;
 
@@ -955,7 +958,7 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
     memcpy(final_token, start, length);
 
     final_token[length] = '\0';
-    printf("FINAL TOKEN: %s\n", final_token);
+    //printf("FINAL TOKEN: %s\n", final_token);
     
 
     Symbol *sym = NULL;
@@ -1105,8 +1108,8 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
     }
     else if((*token)[0] == '[' && !is_list)
     {
-        printf("\n|INDEX|\n");
-        printf("FINAL: %s\n", *token);
+        //printf("\n|INDEX|\n");
+        //printf("FINAL: %s\n", *token);
         //printf("PREVIOUS: %s\n", previous);
         circuitObj = create_obj();
         circuitObj->type = OBJ_INDEX;
@@ -1116,7 +1119,7 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
         index_txt[1] = '\0';
         circuitObj->bracket.index = create_int_obj(atoi(index_txt));
         free(index_txt);
-        printf("\nindex: %d\n", *circuitObj->bracket.index->i);
+        //printf("\nindex: %d\n", *circuitObj->bracket.index->i);
     }
     else if (circuitObj->type == 0)
     {
@@ -1148,7 +1151,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
         rows[row_count]->content = malloc(sizeof(CircuitObj));
         rows[row_count]->content->list.objs = NULL;
         rows[row_count]->content->list.count = 0;
-
+        
         while(token[0] != ';' && token[0] != '\n' && token[0] != '\0')
         {
             CircuitObj *circuitObj = create_obj();
@@ -1166,7 +1169,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
             }
             if(previous_obj == NULL)
             {
-                printf("WHAAT");
+                printf("Previous OBJ: NULL\n");
             }
             else
             {
@@ -1178,33 +1181,44 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 circuitObj = parse_obj(circuit, &token, token, 0);
                 append_obj_to_list(dest, circuitObj);
             }
-            // if(token[0] == ']') token++;
-            char *start = token;
-            // char *end = token;
 
+            char *previous = NULL;
+            char *start = token;
+            char *end = token;
             CircuitObj *left_obj = NULL;
+            CircuitObj *next = NULL;
             while (isgraph(token[0]) && token[0] != ';')
             {
-                char *previous = token - 1;
+                if(token[0] == ']') {token++;}
+
+                previous = NULL;
+                if(token > txt) previous = token - 1;
                 
-                if(token[0] == '[' && !isgraph(previous[0])) break;
-                if (token[0] == '.' || (token[0] == '[' && isgraph(previous[0])))
+                if (token[0] == '.' || (token[0] == '[' && previous != NULL && isgraph(previous[0])))//forse previous == NULL non va bene
                 {
-                    if (dest->list.count > 0)
-                    {
-                        previous_obj = dest->list.objs[dest->list.count - 1];
-                    }
-                    printf("GUAAAAA: %s\n", token);
+                    printf("DOT/INDEX PARSING: %s\n", token);
                     // parsa quello a sinistra
                     // parsa quello a destra
 
-                    if (left_obj == NULL && token[0] == '.')
+                    if (left_obj == NULL)
                     {
-                        left_obj = parse_obj(circuit, &token, start, 0);
+                        if(start > txt) previous = start - 1;
+                        if (start[0] == '[' && ((previous != NULL && !isgraph(previous[0])) || previous == NULL))
+                        {
+                            printf("----------INIZIO LISTA IN INDEX PARSING----------: %s\n", start);
+                            token = start;
+                            left_obj = parse_obj(circuit, &token, start, 1);
+                            print_objects(left_obj);
+                            printf("\n----------FINE LISTA IN INDEX PARSING----------\n");
+                        }else
+                        {
+                            left_obj = parse_obj(circuit, &token, start, 0);
+                        }
                         append_obj_to_list(dest, left_obj);
                     }
-                    else if (left_obj != NULL || (token[0] == '[' && isgraph(previous[0])))
+                    else if (left_obj != NULL)
                     {
+                        printf("ALTROOO:%s\n", start);
                         CircuitObj *next = parse_obj(circuit, &token, start, 0);
 
                         switch (next->type)
@@ -1216,8 +1230,6 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                             break;
                         case OBJ_INDEX:
                             next->bracket.left = malloc(sizeof(CircuitObj));
-                            if(previous_obj != NULL && previous_obj->type == OBJ_LIST)
-                                left_obj = previous_obj;
                             // circuitObj->bracket.left = left_obj;
                             memcpy(next->bracket.left, left_obj, sizeof(CircuitObj));
                             break;
@@ -1234,14 +1246,11 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 
                 token++;
             }
+            end = token;
 
-            if (circuitObj->type == 0 && left_obj != NULL)
+            if (next == NULL && left_obj != NULL)
             {
-                circuitObj = parse_obj(circuit, &token, start, 0);
-                if (dest->list.count > 0)
-                {
-                    previous_obj = dest->list.objs[dest->list.count - 1];
-                }
+                circuitObj = parse_obj(circuit, &token, start, 0); 
                 switch (circuitObj->type)
                 {
                 case OBJ_DOT:
@@ -1253,8 +1262,6 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 case OBJ_INDEX:
                     printf("INDEX\n");
                     circuitObj->bracket.left = malloc(sizeof(CircuitObj));
-                    if (previous_obj != NULL && previous_obj->type == OBJ_LIST)
-                        left_obj = previous_obj;
                     // circuitObj->bracket.left = left_obj;
                     memcpy(circuitObj->bracket.left, left_obj, sizeof(CircuitObj));
                     break;
@@ -1265,21 +1272,22 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 append_obj_to_list(dest, circuitObj);
             }
 
-            if (circuitObj->type == 0 && left_obj == NULL)
+            if (next == NULL && left_obj == NULL && token > start)
             {
-                char *previous = token-1;
-                if (token[0] == '[' && !isgraph(previous[0]))
+                char *previous = NULL;
+                if(start > txt) previous = start - 1;
+                if(start[0] == '[' && ((previous != NULL && !isgraph(previous[0])) || previous == NULL))
                 {
-                    printf("LISTAAA!: %s\n", token);
-                    circuitObj = parse_obj(circuit, &token, token, 1);
-                    append_obj_to_list(dest, circuitObj);
+                    token = start;
+                    printf("SONO GAY! %s\n", token);
+                    circuitObj = parse_obj(circuit, &token, start, 1);
                     add_separator = 0;
                 }
                 else
                 {
                     circuitObj = parse_obj(circuit, &token, start, 0);
-                    append_obj_to_list(dest, circuitObj);
                 }
+                append_obj_to_list(dest, circuitObj);
             }
 
             if(circuitObj != NULL)
@@ -2183,6 +2191,8 @@ int main(void)
     printf("\nSTART - DOPO\n");
     for(int i = 0; i < circuit->context->stack->list.count; i++)
     {
+        printf("\n");
+        printf("%d) --- \n", i+1);
         print_objects(circuit->context->stack->list.objs[i]);
     }
     printf("FINE\n");
