@@ -1395,32 +1395,50 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
 
 CircuitObj *evaluate_index_expr(CircuitObj *index_expr)
 {
-    // index_expr è una OBJ_LIST con dentro es. [var:index, op:+, int:1]
-    int count = index_expr->list.count;
-    CircuitObj **stack = index_expr->list.objs;
-
-    for(int i = 0; i < count; i++)
+    // Caso semplice: non è una lista/espressione, è già un valore singolo (VAR, INT, ecc.)
+    if (index_expr->type != OBJ_LIST)
     {
-        CircuitObj *current = get_actual_value(stack[i]); // QUI le variabili sono già valorizzate
-        if(current->type == OBJ_OP && current->op->type == OP_ADD)
+        return get_actual_value(index_expr);
+    }
+
+    // Caso espressione: es. [var:index, op:+, int:1]
+    // Lavoriamo su una COPIA dell'array di puntatori, mai sull'originale,
+    // altrimenti ogni chiamata muta index_expr->list.objs per sempre.
+    int count = index_expr->list.count;
+    if (count == 0) return NULL;
+
+    CircuitObj **stack = malloc(sizeof(CircuitObj*) * count);
+    memcpy(stack, index_expr->list.objs, sizeof(CircuitObj*) * count);
+
+    for (int i = 0; i < count; i++)
+    {
+        CircuitObj *current = get_actual_value(stack[i]);
+
+        if (current->type == OBJ_OP && current->op->type == OP_ADD)
         {
-            if(i > 0 && i < count - 1)
+            if (i > 0 && i < count - 1)
             {
-                CircuitObj *left = get_actual_value(stack[i-1]);
-                CircuitObj *right = get_actual_value(stack[i+1]);
-                if(left->type == OBJ_INT && right->type == OBJ_INT)
+                CircuitObj *left  = get_actual_value(stack[i - 1]);
+                CircuitObj *right = get_actual_value(stack[i + 1]);
+
+                if (left->type == OBJ_INT && right->type == OBJ_INT)
                 {
                     CircuitObj *result = create_int_obj(*(left->i) + *(right->i));
-                    stack[i-1] = result;
-                    for(int k = i; k < count - 2; k++) stack[k] = stack[k+2];
+                    stack[i - 1] = result;
+
+                    for (int k = i; k < count - 2; k++)
+                        stack[k] = stack[k + 2];
+
                     count -= 2;
-                    i--;
+                    i--; // ricontrolla dalla stessa posizione, per operatori concatenati (a + b + c)
                 }
             }
         }
     }
-    // Il risultato finale dell'espressione indice è il primo (unico) elemento rimasto
-    return get_actual_value(stack[0]);
+
+    CircuitObj *out = get_actual_value(stack[0]);
+    free(stack);
+    return out;
 }
 
 CircuitObj *get_actual_value(CircuitObj *obj);
@@ -1496,9 +1514,9 @@ CircuitObj *execute_func(Circuit *circuit, CircuitObj **stack, CircuitObj *curre
 
         param_size++;
         //printf("PARAM %d: %s %s ", k - i, return_print_objects(stack[k]), stack[k + 1]->type != 0 && stack[k + 1] != NULL && stack[k + 1]->type != 0 && stack[k + 1]->type != OBJ_FUNC ? "-" : "");
-        printf("PARAM %d: ", k-i);
-        print_objects(stack[k]);
-        printf("\n");
+        //printf("PARAM %d: ", k-i);
+        //print_objects(stack[k]);
+        //printf("\n");
         append_obj_to_list(params, get_actual_value(stack[k]));
 
         k++;
@@ -1506,7 +1524,6 @@ CircuitObj *execute_func(Circuit *circuit, CircuitObj **stack, CircuitObj *curre
     if (currentFunc != NULL)
     {
         CircuitObj *returned_obj = ((CircuitFunc)currentFunc->data)(circuit, params, param_size);
-        //if(print) printf("\n");
         free(params); // Devi liberare anche i figli della list obj
         if(print) printf("------------------------------------------\n");
         return returned_obj;
@@ -2190,29 +2207,35 @@ int main(void)
     
     RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt,1);
 
+    int print = 0;
     
-    printf("----------");
-    printf("\nSTART - PRIMA\n");
-    for(int i = 0; i < circuit->context->stack->list.count; i++)
+    if(print)
     {
-        printf("\n");
-        printf("%d) --- \n", i+1);
-        print_objects(circuit->context->stack->list.objs[i]);
+        printf("----------");
+        printf("\nSTART - PRIMA\n");
+        for (int i = 0; i < circuit->context->stack->list.count; i++)
+        {
+            printf("\n");
+            printf("%d) --- \n", i + 1);
+            print_objects(circuit->context->stack->list.objs[i]);
+        }
+        printf("FINE\n");
     }
-    printf("FINE\n");
     
     execute_parsing(circuit);
     
-    printf("----------");
-    printf("\nSTART - DOPO\n");
-    for(int i = 0; i < circuit->context->stack->list.count; i++)
+    if(print)
     {
-        printf("\n");
-        printf("%d) --- \n", i+1);
-        print_objects(circuit->context->stack->list.objs[i]);
+        printf("----------");
+        printf("\nSTART - DOPO\n");
+        for (int i = 0; i < circuit->context->stack->list.count; i++)
+        {
+            printf("\n");
+            printf("%d) --- \n", i + 1);
+            print_objects(circuit->context->stack->list.objs[i]);
+        }
+        printf("FINE\n");
     }
-    printf("FINE\n");
-    
 
     return 0;
 }
