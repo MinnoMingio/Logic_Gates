@@ -1416,6 +1416,10 @@ CircuitObj *evaluate_index_expr(CircuitObj *index_expr)
 
         if (current->type == OBJ_OP && current->op->type == OP_ADD)
         {
+            while ((i < count - 1) && (stack[i + 1]->type == OBJ_DOT || stack[i + 1]->type == OBJ_INDEX))
+            {
+                i++;
+            }
             if (i > 0 && i < count - 1)
             {
                 CircuitObj *left  = get_actual_value(stack[i - 1]);
@@ -1436,7 +1440,17 @@ CircuitObj *evaluate_index_expr(CircuitObj *index_expr)
         }
     }
 
+
     CircuitObj *out = get_actual_value(stack[0]);
+    for (int i = 0; i < count; i++)
+    {
+        while ((i < count - 1) && (stack[i + 1]->type == OBJ_DOT || stack[i + 1]->type == OBJ_INDEX))
+        {
+            i++;
+            out = get_actual_value(stack[i]);
+        }
+    }
+
     free(stack);
     return out;
 }
@@ -1465,7 +1479,7 @@ CircuitObj *get_actual_value(CircuitObj *obj)
 {
     if(obj == NULL) return NULL;
     // Se è una variabile e ha un valore associato in 'data', restituiamo il suo valore
-    if (obj != NULL && obj->type == OBJ_VAR)
+    if (obj->type == OBJ_VAR)
     {
         if(obj->sys != NULL && (*obj->sys)->data != NULL)
         return get_actual_value((CircuitObj *)(*obj->sys)->data); 
