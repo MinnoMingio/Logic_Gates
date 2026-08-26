@@ -965,6 +965,7 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
     char *end = *token;
     int length = end - start;
     char *final_token = malloc(length + 1);
+    if(final_token == NULL) return NULL;
     if(length>0)
     {
         memcpy(final_token, start, length);
@@ -1030,7 +1031,7 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
         memcpy(var_name, start, length);
         var_name[length] = '\0';
 
-        sym = find_var_by_name(circuit, var_name); 
+        sym = find_var_by_name(circuit, var_name);
 
         if(sym == NULL)
         {
@@ -1044,9 +1045,8 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
             circuitObj = create_sym_obj(sym); 
         }
     }
-    else if (isdigit(final_token[0]))
+    else if (isdigit(start[0]))
     {
-        //while(isdigit())
         circuitObj = create_int_obj(atoi(final_token)); 
     }else if((*token)[0] == '"')
     {
@@ -2187,7 +2187,7 @@ int main(void)
     circuit_txt[file_size] = '\0';
     fclose(fp);
     
-    RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt,1);
+    RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt, 1);
 
     int print = 1;
     
