@@ -1028,6 +1028,27 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
         circuitObj->type = OBJ_OP;
         circuitObj->op = op;
     }
+    else if (start[0] == '-')
+    {
+        Operator *op = create_op("-", OP_SUB);
+        circuitObj = create_obj();
+        circuitObj->type = OBJ_OP;
+        circuitObj->op = op;
+    }
+    else if (start[0] == '*')
+    {
+        Operator *op = create_op("*", OP_MOL);
+        circuitObj = create_obj();
+        circuitObj->type = OBJ_OP;
+        circuitObj->op = op;
+    }
+    else if (start[0] == '/')
+    {
+        Operator *op = create_op("/", OP_DIV);
+        circuitObj = create_obj();
+        circuitObj->type = OBJ_OP;
+        circuitObj->op = op;
+    }
     else if (strcmp(final_token, "var") == 0)
     {
         while (isspace((*token)[0]) && (*token)[0] != '\n' && (*token)[0] != '\0' && (*token)[0] != ';')
@@ -1221,7 +1242,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 circuitObj = parse_obj(circuit, &token, token, 0);
                 start = token;
             }
-            else if (token[0] == '=' || token[0] == '+')
+            else if (token[0] == '=' || token[0] == '+' || token[0] == '-' || token[0] == '*' || token[0] == '/')
             {
                 circuitObj = parse_obj(circuit, &token, token, 0);
                 token++;
@@ -1639,6 +1660,174 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                     // 1. Calcola la somma e crea il nuovo oggetto
                     int sum_val = *(left->i) + *(right->i);
                     CircuitObj *result_obj = create_int_obj(sum_val);
+                    print_objects(circuit, result_obj, 0);
+                    printf("\n");
+                    // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
+
+                    // 2. Sostituisci il primo elemento con il risultato
+                    stack[(*i) - 1] = result_obj;
+
+                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
+                    for (int k = (*i); k < *stack_count - 2; k++)
+                    {
+                        stack[k] = stack[k + 2];
+                    }
+
+                    // 4. Aggiorna i contatori dello stack
+                    *stack_count -= 2;
+                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
+                    (*i)--;
+                    currentToken = result_obj;
+                }
+                else
+                {
+                    //(*i)--;
+                    printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    printf("LEFT OPERAND: ");
+                    print_objects(circuit, left, 0);
+                    printf("\n");
+
+                    printf("RIGHT OPERAND: ");
+                    print_objects(circuit, right, 0);
+                    printf("\n");
+                    return NULL;
+                }
+            }
+            break;
+        case OP_SUB:
+            if (*i > 0 && *i < *stack_count - 1)
+            {
+                int left_i = *i-1;
+                CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count)); 
+                int right_i = *i+1;
+                CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
+
+                printf("ADDING LEFT: ");
+                print_objects(circuit, left, 0);
+                printf("\n");
+
+                printf("ADDING RIGHT: ");
+                print_objects(circuit, right, 0);
+                printf("\n");
+
+                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
+                {
+                    printf("RIUSCITO EH\n");
+                    // 1. Calcola la somma e crea il nuovo oggetto
+                    int sub_val = *(left->i) - *(right->i);
+                    CircuitObj *result_obj = create_int_obj(sub_val);
+                    print_objects(circuit, result_obj, 0);
+                    printf("\n");
+                    // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
+
+                    // 2. Sostituisci il primo elemento con il risultato
+                    stack[(*i) - 1] = result_obj;
+
+                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
+                    for (int k = (*i); k < *stack_count - 2; k++)
+                    {
+                        stack[k] = stack[k + 2];
+                    }
+
+                    // 4. Aggiorna i contatori dello stack
+                    *stack_count -= 2;
+                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
+                    (*i)--;
+                    currentToken = result_obj;
+                }
+                else
+                {
+                    //(*i)--;
+                    printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    printf("LEFT OPERAND: ");
+                    print_objects(circuit, left, 0);
+                    printf("\n");
+
+                    printf("RIGHT OPERAND: ");
+                    print_objects(circuit, right, 0);
+                    printf("\n");
+                    return NULL;
+                }
+            }
+            break;
+        case OP_MOL:
+            if (*i > 0 && *i < *stack_count - 1)
+            {
+                int left_i = *i-1;
+                CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count)); 
+                int right_i = *i+1;
+                CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
+
+                printf("ADDING LEFT: ");
+                print_objects(circuit, left, 0);
+                printf("\n");
+
+                printf("ADDING RIGHT: ");
+                print_objects(circuit, right, 0);
+                printf("\n");
+
+                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
+                {
+                    printf("RIUSCITO EH\n");
+                    // 1. Calcola la somma e crea il nuovo oggetto
+                    int mol_val = *(left->i) * *(right->i);
+                    CircuitObj *result_obj = create_int_obj(mol_val);
+                    print_objects(circuit, result_obj, 0);
+                    printf("\n");
+                    // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
+
+                    // 2. Sostituisci il primo elemento con il risultato
+                    stack[(*i) - 1] = result_obj;
+
+                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
+                    for (int k = (*i); k < *stack_count - 2; k++)
+                    {
+                        stack[k] = stack[k + 2];
+                    }
+
+                    // 4. Aggiorna i contatori dello stack
+                    *stack_count -= 2;
+                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
+                    (*i)--;
+                    currentToken = result_obj;
+                }
+                else
+                {
+                    //(*i)--;
+                    printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    printf("LEFT OPERAND: ");
+                    print_objects(circuit, left, 0);
+                    printf("\n");
+
+                    printf("RIGHT OPERAND: ");
+                    print_objects(circuit, right, 0);
+                    printf("\n");
+                    return NULL;
+                }
+            }
+            break;
+        case OP_DIV:
+            if (*i > 0 && *i < *stack_count - 1)
+            {
+                int left_i = *i-1;
+                CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count)); 
+                int right_i = *i+1;
+                CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
+
+                printf("ADDING LEFT: ");
+                print_objects(circuit, left, 0);
+                printf("\n");
+
+                printf("ADDING RIGHT: ");
+                print_objects(circuit, right, 0);
+                printf("\n");
+
+                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
+                {
+                    printf("RIUSCITO EH\n");
+                    // 1. Calcola la somma e crea il nuovo oggetto
+                    int div_val = *(left->i) / *(right->i);
+                    CircuitObj *result_obj = create_int_obj(div_val);
                     print_objects(circuit, result_obj, 0);
                     printf("\n");
                     // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
