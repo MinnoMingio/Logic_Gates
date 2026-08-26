@@ -436,10 +436,10 @@ void append_t_to_c(Circuit *circuit, Transistor *transistor)
     circuit->transistor_count++;
 }
 
-CircuitObj *get_prop_value(CircuitObj *dot_obj, char *prop_name);
-void *print_objects(CircuitObj *obj);
+CircuitObj *get_prop_value(Circuit *circuit, CircuitObj *dot_obj, char *prop_name);
+void *print_objects(Circuit *circuit, CircuitObj *obj);
 
-char *return_print_objects(CircuitObj *obj)
+char *return_print_objects(Circuit *circuit, CircuitObj *obj)
 {
     char *result = NULL;
 
@@ -491,7 +491,7 @@ char *return_print_objects(CircuitObj *obj)
             for (int i = 0; i < obj->list.count; i++)
             {
                 // Chiamata ricorsiva per l'elemento corrente
-                char *item_str = return_print_objects(obj->list.objs[i]);
+                char *item_str = return_print_objects(circuit, obj->list.objs[i]);
                 if (!item_str) continue;
 
                 size_t item_len = strlen(item_str);
@@ -548,7 +548,7 @@ char *return_print_objects(CircuitObj *obj)
         }
         case OBJ_DOT:
         {
-            result = return_print_objects(get_prop_value(obj->prop.left, obj->prop.name));
+            result = return_print_objects(circuit, get_prop_value(circuit,obj->prop.left, obj->prop.name));
             break;
         }
         case OBJ_OP:
@@ -575,10 +575,10 @@ char *return_print_objects(CircuitObj *obj)
     return result;
 }
 
-CircuitObj *evaluate_index_expr(CircuitObj *index_express);
-CircuitObj *get_actual_value(CircuitObj *obj);
+CircuitObj *evaluate_index_expr(Circuit *circuit, CircuitObj *index_express);
+CircuitObj *get_actual_value(Circuit *circuit, CircuitObj *obj);
 
-void *print_objects(CircuitObj *obj)
+void *print_objects(Circuit *circuit, CircuitObj *obj)
 {
     switch (obj->type)
     {
@@ -594,7 +594,7 @@ void *print_objects(CircuitObj *obj)
             {
                 printf("   %d - ", i);
                 printf("\t");
-                print_objects(obj->list.objs[i]);
+                print_objects(circuit, obj->list.objs[i]);
             }
             break;
         case OBJ_TRAN:
@@ -610,8 +610,8 @@ void *print_objects(CircuitObj *obj)
             //printf("var: %s, Value: %s\n", obj->sys->name, return_print_objects(obj->sys->data));
             printf("var: %s - ", (*obj->sys)->name);
             printf("VALUE: ");
-            CircuitObj *var_value = get_actual_value((CircuitObj*)(*obj->sys)->data);
-            if(var_value != NULL) print_objects(var_value);
+            CircuitObj *var_value = get_actual_value(circuit, (CircuitObj*)(*obj->sys)->data);
+            if(var_value != NULL) print_objects(circuit, var_value);
             else printf("\n");
             break;
         case OBJ_OP:
@@ -621,7 +621,7 @@ void *print_objects(CircuitObj *obj)
             printf("attribute: %s\n", obj->prop.name != NULL ? obj->prop.name : "none");
             printf("left prop: ");
             if(obj->prop.left != NULL)
-            print_objects(obj->prop.left);
+            print_objects(circuit, obj->prop.left);
             else
             printf("\n");
             break;
@@ -631,8 +631,8 @@ void *print_objects(CircuitObj *obj)
             {
                 if(obj->bracket.index->i != NULL)
                 {
-                    CircuitObj *eval = evaluate_index_expr(obj->bracket.index);
-                    CircuitObj *val = get_actual_value(eval);
+                    CircuitObj *eval = evaluate_index_expr(circuit, obj->bracket.index);
+                    CircuitObj *val = get_actual_value(circuit, eval);
                     if (val && val->type == OBJ_INT)
                     {
                         printf("%d", *(val->i));
@@ -642,7 +642,7 @@ void *print_objects(CircuitObj *obj)
             printf("\n");
             printf("left element: ");
             if(obj->bracket.left != NULL)
-            print_objects(obj->bracket.left);
+            print_objects(circuit, obj->bracket.left);
             else
             printf("\n");
             break;
@@ -954,7 +954,7 @@ void append_obj_to_list(CircuitObj *list_obj, CircuitObj *obj)
 }
 
 RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separator);
-CircuitObj *get_actual_value(CircuitObj *obj);
+CircuitObj *get_actual_value(Circuit *circuit, CircuitObj *obj);
 
 CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
 {
@@ -970,9 +970,15 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
         memcpy(final_token, start, length);
         final_token[length] = '\0';
     }
-    
-    //if(length <= 0) return NULL;
-
+    else if(length + 1 <= 0)
+    {
+        return NULL;
+    }
+    else
+    {
+        if(!isgraph((*token)[0])) return NULL;
+    }
+     
     Symbol *sym = NULL;
     for (int i = 0; i < circuit->context->symTable->sym_count; i++)
     {
@@ -1203,7 +1209,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 circuitObj = parse_obj(circuit, &token, token, 0);
                 start = token;
             }
-            else if (token[0] == '.')
+            else if (token[0] == '.' && previous_obj != NULL)
             {
                 circuitObj = parse_obj(circuit, &token, token, 0);
                 circuitObj->prop.left = previous_obj;
@@ -1214,7 +1220,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 circuitObj = parse_obj(circuit, &token, token, 1);
                 start = token;
             }
-            else if(start[0] == '[' && ((previous != NULL && isgraph(previous[0]))))
+            else if(start[0] == '[' && previous_obj != NULL && ((previous != NULL && isgraph(previous[0]))))
             {
                 circuitObj = parse_obj(circuit, &token, token, 0);
                 circuitObj->bracket.left = previous_obj;
@@ -1238,7 +1244,15 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
             }
 
             if(circuitObj != NULL)
-            append_obj_to_list(dest, circuitObj);
+            {
+                append_obj_to_list(dest, circuitObj);
+                append_obj_to_list(rows[row_count]->content, circuitObj);
+                element_count++;
+            }else
+            {
+                token++;
+                continue;
+            }
 
             /*
             while (isgraph(token[0]) && token[0] != ';')
@@ -1371,14 +1385,6 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 }
             }
             */
-
-            if(circuitObj != NULL)
-            {
-                //append_obj_to_list(dest, circuitObj);
-                append_obj_to_list(rows[row_count]->content, circuitObj);
-            }
-            
-            element_count++;
         }
         if(add_separator && element_count > 0)
         {
@@ -1393,72 +1399,24 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
     return rows; 
 }
 
-CircuitObj *evaluate_index_expr(CircuitObj *index_expr)
+CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count);
+CircuitObj *evaluate_expression(Circuit *circuit, CircuitObj *expression);
+CircuitObj *evaluate_index_expr(Circuit *circuit, CircuitObj *index_expr)
 {
-    // Caso semplice: non è una lista/espressione, è già un valore singolo (VAR, INT, ecc.)
-    if (index_expr->type != OBJ_LIST)
+    CircuitObj **expression = index_expr->list.objs;
+    CircuitObj *index_obj = NULL;
+    for(int i = 0; i < index_expr->list.count; i++)
     {
-        return get_actual_value(index_expr);
+        index_obj = evaluate_single_expression(circuit, expression, &i, &index_expr->list.count);
     }
-
-    // Caso espressione: es. [var:index, op:+, int:1]
-    // Lavoriamo su una COPIA dell'array di puntatori, mai sull'originale,
-    // altrimenti ogni chiamata muta index_expr->list.objs per sempre.
-    int count = index_expr->list.count;
-    if (count == 0) return NULL;
-
-    CircuitObj **stack = malloc(sizeof(CircuitObj*) * count);
-    memcpy(stack, index_expr->list.objs, sizeof(CircuitObj*) * count);
-
-    for (int i = 0; i < count; i++)
-    {
-        CircuitObj *current = get_actual_value(stack[i]);
-
-        if (current->type == OBJ_OP && current->op->type == OP_ADD)
-        {
-            while ((i < count - 1) && (stack[i + 1]->type == OBJ_DOT || stack[i + 1]->type == OBJ_INDEX))
-            {
-                i++;
-            }
-            if (i > 0 && i < count - 1)
-            {
-                CircuitObj *left  = get_actual_value(stack[i - 1]);
-                CircuitObj *right = get_actual_value(stack[i + 1]);
-
-                if (left->type == OBJ_INT && right->type == OBJ_INT)
-                {
-                    CircuitObj *result = create_int_obj(*(left->i) + *(right->i));
-                    stack[i - 1] = result;
-
-                    for (int k = i; k < count - 2; k++)
-                        stack[k] = stack[k + 2];
-
-                    count -= 2;
-                    i--; // ricontrolla dalla stessa posizione, per operatori concatenati (a + b + c)
-                }
-            }
-        }
-    }
-
-
-    CircuitObj *out = get_actual_value(stack[0]);
-    for (int i = 0; i < count; i++)
-    {
-        while ((i < count - 1) && (stack[i + 1]->type == OBJ_DOT || stack[i + 1]->type == OBJ_INDEX))
-        {
-            i++;
-            out = get_actual_value(stack[i]);
-        }
-    }
-
-    free(stack);
-    return out;
+    return get_actual_value(circuit, index_obj);
 }
 
-CircuitObj *get_actual_value(CircuitObj *obj);
-
-CircuitObj *search_prop(CircuitObj *obj, char *prop_name)
+CircuitObj *search_prop(Circuit *circuit, CircuitObj *obj, char *prop_name)
 {
+    printf("OGGETO PROPRI: ");
+    print_objects(circuit, obj);
+    printf("\n");
     for(int i = 0; i < obj->prop_count; i++)
     {
         if(strcmp(obj->props[i]->name, prop_name) == 0)
@@ -1469,76 +1427,50 @@ CircuitObj *search_prop(CircuitObj *obj, char *prop_name)
     return NULL;
 }
 
-CircuitObj *get_prop_value(CircuitObj *dot_obj, char *prop_name)
+CircuitObj *get_prop_value(Circuit *circuit, CircuitObj *dot_obj, char *prop_name)
 {
-    CircuitObj *real_obj = get_actual_value(dot_obj);
-    return search_prop(real_obj, prop_name);
+    CircuitObj *real_obj = get_actual_value(circuit, dot_obj);
+    return search_prop(circuit, real_obj, prop_name);
 }
 
-CircuitObj *get_actual_value(CircuitObj *obj)
+CircuitObj *get_actual_value(Circuit *circuit, CircuitObj *obj)
 {
     if(obj == NULL) return NULL;
     // Se è una variabile e ha un valore associato in 'data', restituiamo il suo valore
-    if (obj->type == OBJ_VAR)
+    if (obj != NULL && obj->type == OBJ_VAR)
     {
+        //print_objects(circuit, obj);
         if(obj->sys != NULL && (*obj->sys)->data != NULL)
-        return get_actual_value((CircuitObj *)(*obj->sys)->data); 
+        return get_actual_value(circuit, (CircuitObj *)(*obj->sys)->data);
     }
     if (obj->type == OBJ_DOT)
     {
         CircuitObj *left = obj->prop.left;
-        return get_prop_value(left, obj->prop.name);
+        return get_prop_value(circuit, left, obj->prop.name);
     }
     if (obj->type == OBJ_INDEX)
     {
-        CircuitObj *left = get_actual_value(obj->bracket.left);
-        CircuitObj *index_obj = evaluate_index_expr(obj->bracket.index);
-        int index = *((get_actual_value(index_obj)->i));
-        return get_actual_value(left->list.objs[index]);
+        CircuitObj *left = get_actual_value(circuit, obj->bracket.left);
+        CircuitObj *index_obj = evaluate_index_expr(circuit,obj->bracket.index);
+        int index = *((get_actual_value(circuit, index_obj)->i));
+        return get_actual_value(circuit, left->list.objs[index]);
     }
     // Altrimenti è già un valore letterale (es. un INT o una STR) e lo restituiamo così com'è
     return obj;
 }
 
-CircuitObj *execute_func(Circuit *circuit, CircuitObj **stack, CircuitObj *currentToken, int i, int print)
+CircuitObj *execute_func(Circuit *circuit, CircuitObj *funcObj, CircuitObj *paramObj, int print)
 {
-    if(print) printf("FUNC TROVATA! (%s): ", (*currentToken->sys)->name);
+    if(print) printf("FUNC TROVATA! (%s): ", (*funcObj->sys)->name);
 
     Symbol *currentFunc = NULL;
-    currentFunc = *currentToken->sys;
-
-    CircuitObj *params = malloc(sizeof(CircuitObj));
-    params->type = OBJ_LIST;
-
-    params->list.objs = NULL;
-    params->list.count = 0;
-    int param_size = 0;
-
-    //int prop_index = i+1;
-    int k = i + 1;
-    while (currentFunc != NULL && stack[k] != NULL && stack[k]->type != 0 && stack[k]->type != OBJ_FUNC)
-    {
-        //print_objects(currentToken);
-
-        while (stack[k+1]->type == OBJ_DOT || stack[k+1]->type == OBJ_INDEX)
-        {
-            k++;
-            i++;
-        }
-
-        param_size++;
-        //printf("PARAM %d: %s %s ", k - i, return_print_objects(stack[k]), stack[k + 1]->type != 0 && stack[k + 1] != NULL && stack[k + 1]->type != 0 && stack[k + 1]->type != OBJ_FUNC ? "-" : "");
-        //printf("PARAM %d: ", k-i);
-        //print_objects(stack[k]);
-        //printf("\n");
-        append_obj_to_list(params, get_actual_value(stack[k]));
-
-        k++;
-    }
+    currentFunc = *funcObj->sys;
+    int param_size = paramObj->list.count;
+    
     if (currentFunc != NULL)
     {
-        CircuitObj *returned_obj = ((CircuitFunc)currentFunc->data)(circuit, params, param_size);
-        free(params); // Devi liberare anche i figli della list obj
+        CircuitObj *returned_obj = ((CircuitFunc)currentFunc->data)(circuit, paramObj, param_size);
+        //free(paramObj); // Devi liberare anche i figli della list obj
         if(print) printf("------------------------------------------\n");
         return returned_obj;
     }else
@@ -1548,205 +1480,241 @@ CircuitObj *execute_func(Circuit *circuit, CircuitObj **stack, CircuitObj *curre
     }
 }
 
+CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count)
+{
+    while((*i)+1 < *stack_count && (stack[(*i) + 1]->type == OBJ_DOT || stack[(*i) + 1]->type == OBJ_INDEX)) (*i)++;
+    CircuitObj *currentToken = stack[*i];
+    CircuitObj *previous = NULL;
+    CircuitObj *next = NULL;
+
+    if (*i > 0) previous = stack[*i - 1];
+    if (*i < *stack_count - 1) next = stack[*i + 1];
+
+    // parse_getters(currentToken, previous);
+    if (currentToken->type == OBJ_OP)
+    {
+        switch (currentToken->op->type)
+        {
+        case OP_ASSIGN:
+        {
+            previous = stack[*i - 1];
+            CircuitObj *assign_expression = create_list_obj();
+            while (*i+1 < *stack_count && stack[*i+1] != NULL && stack[*i+1]->type != 0)
+            {
+                append_obj_to_list(assign_expression, stack[*i+1]);
+                (*i)++;
+            }
+            int temp_i = 0;
+            next = evaluate_single_expression(circuit, assign_expression->list.objs, &temp_i, &assign_expression->list.count);
+
+            //printf("---- START OP ASSIGN ----\n");
+            //printf("PREVIOUS: ");
+            //print_objects(circuit, previous);
+            //printf("\n");
+           
+
+            //printf("NEXT: ");
+            //print_objects(circuit, next);
+            //printf("\n");
+            //printf("---- END OP ASSIGN ----\n\n");
+
+            if (*i > 0 && *i < *stack_count - 1 && previous != NULL && next != NULL)
+            {
+                if (previous->type == OBJ_VAR)
+                {
+                    previous->mode = READ_ONLY;
+                    next->mode = READ_ONLY;
+                    (*previous->sys)->data = next;
+                }
+                if (previous->type == OBJ_DOT)
+                {
+                    CircuitObj **prop_addr = NULL;
+                    CircuitObj *dot_obj = get_actual_value(circuit, previous->prop.left);
+                    for (int i = 0; i < dot_obj->prop_count; i++)
+                    {
+                        if (strcmp(dot_obj->props[i]->name, previous->prop.name) == 0)
+                        {
+                            prop_addr = &dot_obj->props[i]->prop;
+                        }
+                    }
+                    if ((*prop_addr)->type != next->type)
+                    {
+                        printf("TYPE MISMATCH!\n");
+                        return NULL;
+                    }
+                    CircuitObj *prop_obj = *prop_addr;
+                    switch (prop_obj->type)
+                    {
+                    case OBJ_STR:
+                        *(prop_obj->str) = *(next->str);
+                        break;
+                    case OBJ_INT:
+                        *(prop_obj->i) = *(next->i);
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                if (previous->type == OBJ_INDEX)
+                {
+                    CircuitObj **prop_addr = NULL;
+                    CircuitObj *bracket_obj = get_actual_value(circuit, previous->bracket.left);
+                    prop_addr = &bracket_obj->list.objs[*evaluate_index_expr(circuit, previous->bracket.index)->i];
+
+                    CircuitObj *prop_obj = *prop_addr;
+                    switch (prop_obj->type)
+                    {
+                    case OBJ_STR:
+                        *(prop_obj->str) = *(next->str);
+                        break;
+                    case OBJ_INT:
+                        *(prop_obj->i) = *(next->i);
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
+            // prendi obj prima e obj dopo
+            // controlla che esistano
+            // controlla che obj prima sia una var
+            // assegna al data della var il obj dopo
+            // printf("VAR VALUE: %s", return_print_objects(previous->sys->data));
+            //(*i)++;
+        }
+        case OP_ADD:
+            if (*i > 0 && *i < *stack_count - 1)
+            {
+                /*
+                int left_scan = *i;
+                int right_scan = *i;
+                int scan = left_scan;
+
+                CircuitObj *left = create_list_obj();//get_actual_value(circuit, evaluate_single_expression(circuit, stack, i, stack_count));
+                while(left_scan > 0 && stack[left_scan-1]->type != 0 && stack[left_scan-1]->type != OBJ_OP)
+                {
+                    left_scan--;
+                }
+                while (left_scan + 1 < *stack_count && stack[left_scan+1]->type != 0 && stack[left_scan+1]->type != OBJ_OP)
+                {
+                    append_obj_to_list(left, stack[left_scan]);
+                    left_scan++;
+                }
+
+                CircuitObj *right = create_list_obj();//get_actual_value(circuit, evaluate_single_expression(circuit, stack, i, stack_count));
+                while(right_scan+1 < *stack_count && stack[right_scan+1]->type != 0 && stack[right_scan+1]->type != OBJ_OP)
+                {
+                    append_obj_to_list(right, stack[right_scan+1]); 
+                    right_scan++;
+                }
+
+                left = get_actual_value(circuit, evaluate_expression(circuit, left)); 
+                right = get_actual_value(circuit, evaluate_expression(circuit, right));
+
+                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
+                {
+                    printf("RIUSCITO EH\n");
+                    // 1. Calcola la somma e crea il nuovo oggetto
+                    int sum_val = *(left->i) + *(right->i);
+                    CircuitObj *result_obj = create_int_obj(sum_val);
+                    print_objects(circuit, result_obj);
+                    printf("\n");
+
+                    // 2. Sostituisci il primo elemento con il risultato
+                    stack[(*i) - 1] = result_obj;
+
+                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
+                    for (int k = (*i); k < *stack_count - 2; k++)
+                    {
+                        stack[k] = stack[k + 2];
+                    }
+
+                    // 4. Aggiorna i contatori dello stack
+                    circuit->context->stack->list.count -= 2;
+                    *stack_count -= 2;
+
+                    (*i)--;
+                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
+                    currentToken = result_obj;
+                }
+                else
+                {
+                    (*i)--;
+                    printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    printf("LEFT OPERAND: ");
+                    print_objects(circuit, left);
+                    printf("\n");
+
+                    printf("RIGHT OPERAND: ");
+                    print_objects(circuit, right);
+                    printf("\n");
+                }
+                */
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    
+    if (currentToken != NULL && currentToken->type == OBJ_VAR)
+    {
+        CircuitObj *innerObj = get_actual_value(circuit, stack[*i]);
+
+        if (*i < *stack_count - 1 && stack[*i + 1]->type != OBJ_OP)
+            innerObj->mode = READ_WRITE;
+        currentToken = innerObj;
+    }
+
+    switch (currentToken->type)
+    {
+    case OBJ_FUNC:
+        if (currentToken->mode != READ_WRITE)
+            break;
+
+        int temp_i = 0;
+        CircuitObj *paramObjList = create_list_obj();
+        CircuitObj *paramObj = create_obj();
+        while (*i + 1 < *stack_count && stack[*i + 1]->type != 0)
+        {
+            (*i)++;
+            append_obj_to_list(paramObjList, get_actual_value(circuit, evaluate_single_expression(circuit, stack, i, stack_count)));
+        }
+
+        //paramObj = evaluate_single_expression(circuit, paramObjList->list.objs, &temp_i, &paramObjList->list.count);
+        //printf("PARAMETRI PARSATI: ");
+        //print_objects(circuit, paramObjList);
+        //printf("-----------\n");
+        CircuitObj *returned_obj = execute_func(circuit, currentToken, paramObjList, 1);
+        if (returned_obj == NULL)
+        {
+            printf("OBJ: \"%s\" CRASHED!\n", return_print_objects(circuit, currentToken));
+            return NULL;
+        }
+
+        currentToken = returned_obj;
+        break;
+
+    default:
+        break;
+    }
+    return currentToken;
+}
+
+CircuitObj* evaluate_expression(Circuit *circuit, CircuitObj *expression)
+{
+    CircuitObj *return_obj = NULL;
+    for (int i = 0; i < expression->list.count; i++)
+    {
+        return_obj = evaluate_single_expression(circuit, expression->list.objs, &i, &expression->list.count); 
+    }
+    return return_obj;
+}
+
 void execute_parsing(Circuit *circuit)
 {
-    CircuitObj **stack = circuit->context->stack->list.objs;
-    int stack_count = circuit->context->stack->list.count;
-
-    for(int i = 0; i < stack_count; i++)
-    {
-        CircuitObj *currentToken = stack[i];
-        CircuitObj *previous = NULL; 
-        CircuitObj *next = NULL;
-        if(i > 0) previous = stack[i-1];
-        if(i < stack_count-1) next = stack[i+1];
-
-        //parse_getters(currentToken, previous);
-        if (currentToken->type == OBJ_OP)
-        {
-            switch (currentToken->op->type)
-            {
-            case OP_ASSIGN:
-            {
-                //CircuitObj *
-                previous = stack[i - 1];
-                
-                //CircuitObj *next = stack[i + 1];
-                //CircuitObj *
-                next = get_actual_value(next);
-
-                if (i > 0 && i < stack_count - 1 && previous != NULL && next != NULL)
-                {
-                    if (previous->type == OBJ_VAR)
-                    {
-                        previous->mode = READ_ONLY;
-                        next->mode = READ_ONLY;
-
-                        if(next->type == OBJ_FUNC)
-                        {
-                            if(stack[i+2]->type == 0)
-                            {
-                                (*previous->sys)->data = next;
-                            }else
-                            {
-                                (*previous->sys)->data = execute_func(circuit, stack, next, i+1, 0);
-                            }                        
-                        }else
-                        {
-                            (*previous->sys)->data = next;
-                        }
-                    }
-                    if (previous->type == OBJ_DOT)
-                    {
-                        CircuitObj **prop_addr = NULL; 
-                        CircuitObj *dot_obj = get_actual_value(previous->prop.left);
-                        for (int i = 0; i < dot_obj->prop_count; i++)
-                        {
-                            if (strcmp(dot_obj->props[i]->name, previous->prop.name) == 0)
-                            {
-                                prop_addr = &dot_obj->props[i]->prop;
-                            }
-                        }
-                        if((*prop_addr)->type != next->type) 
-                        {
-                            printf("TYPE MISMATCH!\n");
-                            return;
-                        }
-                        if (next->type == OBJ_FUNC)
-                        {
-                            if(stack[i+2]->type == 0)
-                            {
-                                *(prop_addr) = next;
-                            }else
-                            {
-                                *(prop_addr) = execute_func(circuit, stack, next, i+1, 0);
-                            }                        
-                        }else
-                        {
-                            //*(prop_addr) = next; // PROBABILMENTE QUA DEVI ACCEDERE AL TIPO CORRETTO ATTRAVERSO INDIRIZZO (DAL DOPPIO PUNTATORE) E CAMBIARLO
-                            {
-                                CircuitObj *prop_obj = *prop_addr;
-                                switch (prop_obj->type)
-                                {
-                                case OBJ_STR:
-                                    *(prop_obj->str) = *(next->str);
-                                    break;
-                                case OBJ_INT:
-                                    *(prop_obj->i) = *(next->i);
-                                    break;
-                                default:
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (previous->type == OBJ_INDEX)
-                    {
-                        CircuitObj **prop_addr = NULL; 
-                        CircuitObj *bracket_obj = get_actual_value(previous->bracket.left);
-
-                        //prop_addr = &bracket_obj->list.objs[*previous->bracket.index->i];
-                        prop_addr = &bracket_obj->list.objs[*evaluate_index_expr(previous->bracket.index)->i];
-                        
-                        if (next->type == OBJ_FUNC)
-                        {
-                            if(stack[i+2]->type == 0)
-                            {
-                                *(prop_addr) = next;
-                            }else
-                            {
-                                *(prop_addr) = execute_func(circuit, stack, next, i+1, 0);
-                            }                        
-                        }else
-                        {
-                            //*(prop_addr) = next; // PROBABILMENTE QUA DEVI ACCEDERE AL TIPO CORRETTO ATTRAVERSO INDIRIZZO (DAL DOPPIO PUNTATORE) E CAMBIARLO
-                            {
-                                CircuitObj *prop_obj = *prop_addr;
-                                switch (prop_obj->type)
-                                {
-                                case OBJ_STR:
-                                    *(prop_obj->str) = *(next->str);
-                                    break;
-                                case OBJ_INT:
-                                    *(prop_obj->i) = *(next->i);
-                                    break;
-                                default:
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                // prendi obj prima e obj dopo
-                // controlla che esistano
-                // controlla che obj prima sia una var
-                // assegna al data della var il obj dopo
-                //printf("VAR VALUE: %s", return_print_objects(previous->sys->data));
-                i++;
-                break;
-
-            }
-            case OP_ADD:
-                if (i > 0 && i < stack_count - 1)
-                {
-                    CircuitObj *left = get_actual_value(stack[i - 1]);
-                    CircuitObj *right = get_actual_value(stack[i + 1]);
-
-                    if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
-                    {
-                        // 1. Calcola la somma e crea il nuovo oggetto
-                        int sum_val = *(left->i) + *(right->i);
-                        CircuitObj *result_obj = create_int_obj(sum_val);
-
-                        // 2. Sostituisci il primo elemento con il risultato
-                        stack[i - 1] = result_obj;
-
-                        // 3. Compatta lo stack eliminando l'operatore e il secondo operando
-                        for (int k = i; k < stack_count - 2; k++)
-                        {
-                            stack[k] = stack[k + 2];
-                        }
-
-                        // 4. Aggiorna i contatori dello stack
-                        circuit->context->stack->list.count -= 2;
-                        stack_count -= 2;
-
-                        // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
-                        i--;
-                    }
-                    else
-                    {
-                        printf("ERRORE: Operandi non validi per la somma (+)\n");
-                    }
-                }
-                break;
-            default:
-                break;
-            }
-        }
-        
-        currentToken = stack[i];
-        if(currentToken != NULL && currentToken->type == OBJ_VAR)
-        {
-            CircuitObj *innerObj = get_actual_value(stack[i]);
-
-            if(i < stack_count - 1 && stack[i+1]->type != OBJ_OP) innerObj->mode = READ_WRITE;
-            currentToken = innerObj;
-        }
-
-        switch (currentToken->type)
-        {
-            case OBJ_FUNC:
-                if(currentToken->mode != READ_WRITE) break;
-                int k = i+1;
-                CircuitObj *returned_obj = execute_func(circuit, stack, currentToken, i, 1);
-                if(returned_obj == NULL) {printf("OBJ: \"%s\" CRASHED!\n", return_print_objects(currentToken)); return;}
-                break;
-            
-            default:
-                break;
-        } 
-    }
+    CircuitObj *stack = circuit->context->stack;
+    evaluate_expression(circuit, stack); 
 
     /*
     for(int i = 0; i < stack_count; i++)
@@ -2128,7 +2096,7 @@ CircuitObj *Print_Wrap(Circuit *circuit, CircuitObj *params, int count)
 {
     for(int i = 0; i < count; i++)
     {
-        CircuitObj *obj = get_actual_value(params->list.objs[i]);
+        CircuitObj *obj = get_actual_value(circuit, params->list.objs[i]);
         if(obj == NULL) {printf("OBJ NULLO\n"); return NULL;}
         printf("\n");
         if(obj->type == OBJ_WIRE)
@@ -2150,7 +2118,7 @@ CircuitObj *Print_Wrap(Circuit *circuit, CircuitObj *params, int count)
         else if(obj->type == OBJ_LIST)
         {
             printf(">> ");
-            print_objects(obj);
+            print_objects(circuit, obj);
             //Print_Wrap(circuit, obj, obj->list.count); 
         }
     }
@@ -2221,7 +2189,7 @@ int main(void)
     
     RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt,1);
 
-    int print = 0;
+    int print = 1;
     
     if(print)
     {
@@ -2231,7 +2199,7 @@ int main(void)
         {
             printf("\n");
             printf("%d) --- \n", i + 1);
-            print_objects(circuit->context->stack->list.objs[i]);
+            print_objects(circuit, circuit->context->stack->list.objs[i]);
         }
         printf("FINE\n");
     }
@@ -2246,7 +2214,7 @@ int main(void)
         {
             printf("\n");
             printf("%d) --- \n", i + 1);
-            print_objects(circuit->context->stack->list.objs[i]);
+            print_objects(circuit, circuit->context->stack->list.objs[i]);
         }
         printf("FINE\n");
     }
