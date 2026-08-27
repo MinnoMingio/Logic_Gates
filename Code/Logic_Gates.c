@@ -1656,7 +1656,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
 
                 if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
                 {
-                    printf("RIUSCITO EH\n");
+                    printf("RISULTATO:\n");
                     // 1. Calcola la somma e crea il nuovo oggetto
                     int sum_val = *(left->i) + *(right->i);
                     CircuitObj *result_obj = create_int_obj(sum_val);
@@ -1702,17 +1702,17 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 int right_i = *i+1;
                 CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
 
-                printf("ADDING LEFT: ");
+                printf("SUBTRACTING LEFT: ");
                 print_objects(circuit, left, 0);
                 printf("\n");
 
-                printf("ADDING RIGHT: ");
+                printf("SUBTRACTING RIGHT: ");
                 print_objects(circuit, right, 0);
                 printf("\n");
 
                 if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
                 {
-                    printf("RIUSCITO EH\n");
+                    printf("RISULTATO:\n");
                     // 1. Calcola la somma e crea il nuovo oggetto
                     int sub_val = *(left->i) - *(right->i);
                     CircuitObj *result_obj = create_int_obj(sub_val);
@@ -1738,7 +1738,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 else
                 {
                     //(*i)--;
-                    printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    printf("ERRORE: Operandi non validi per la sottrazione (-)\n");
                     printf("LEFT OPERAND: ");
                     print_objects(circuit, left, 0);
                     printf("\n");
@@ -1758,17 +1758,17 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 int right_i = *i+1;
                 CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
 
-                printf("ADDING LEFT: ");
+                printf("MULTIPLYING LEFT: ");
                 print_objects(circuit, left, 0);
                 printf("\n");
 
-                printf("ADDING RIGHT: ");
+                printf("MULTIPLYING RIGHT: ");
                 print_objects(circuit, right, 0);
                 printf("\n");
 
                 if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
                 {
-                    printf("RIUSCITO EH\n");
+                    printf("RISULTATO:\n");
                     // 1. Calcola la somma e crea il nuovo oggetto
                     int mol_val = *(left->i) * *(right->i);
                     CircuitObj *result_obj = create_int_obj(mol_val);
@@ -1794,7 +1794,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 else
                 {
                     //(*i)--;
-                    printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    printf("ERRORE: Operandi non validi per la moltiplicazione (*)\n");
                     printf("LEFT OPERAND: ");
                     print_objects(circuit, left, 0);
                     printf("\n");
@@ -1814,17 +1814,17 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 int right_i = *i+1;
                 CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
 
-                printf("ADDING LEFT: ");
+                printf("DIVIDING LEFT: ");
                 print_objects(circuit, left, 0);
                 printf("\n");
 
-                printf("ADDING RIGHT: ");
+                printf("DIVIDING RIGHT: ");
                 print_objects(circuit, right, 0);
                 printf("\n");
 
                 if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
                 {
-                    printf("RIUSCITO EH\n");
+                    printf("RISULTATO:\n");
                     // 1. Calcola la somma e crea il nuovo oggetto
                     int div_val = *(left->i) / *(right->i);
                     CircuitObj *result_obj = create_int_obj(div_val);
@@ -1850,7 +1850,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 else
                 {
                     //(*i)--;
-                    printf("ERRORE: Operandi non validi per la somma (+)\n");
+                    printf("ERRORE: Operandi non validi per la divisione (/)\n");
                     printf("LEFT OPERAND: ");
                     print_objects(circuit, left, 0);
                     printf("\n");
@@ -1884,11 +1884,52 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
         int param_i_start = 0;
         int param_i_end = (*currentToken->sys)->param_count;
         CircuitObj *paramObjList = create_list_obj();
-        while (*i + 1 < *stack_count && stack[*i + 1]->type != 0 && param_i_start < param_i_end)
+        
+        // 1. Salviamo l'indice di partenza (senza malloc)
+        int start_index = *i;
+        int length = 0;
+        int can_evaluate = 1;
+        if((*currentToken->sys)->param_count == 0 || stack[*i+1]->type == OBJ_OP)
         {
-            (*i)++;
-            param_i_start++;
-            append_obj_to_list(paramObjList, get_actual_value(circuit, evaluate_single_expression(circuit, stack, i, stack_count)));
+            // Siamo dentro un'espressione e non dobbiamo evaluare
+            can_evaluate = 0;
+        }
+
+        if (can_evaluate)
+        {
+            // 2. Unico ciclo SOLO per valutare i parametri e NON per aggiungerli!
+            while (*i + 1 < *stack_count && stack[*i + 1]->type != 0)
+            {
+                (*i)++;
+                start_index++;
+
+                // Valutiamo l'espressione del parametro
+                CircuitObj *eval_obj = evaluate_single_expression(circuit, stack, i, stack_count);
+            }
+
+            length = *i - start_index;
+
+            // 3. Torniamo indietro per riconminciare l'aggiunta dei parametri evaluati
+            while (*i > 0 && stack[*i] != currentToken)
+            {
+                (*i)--;
+            }
+
+            // 4. Riniziamo da currentToken questa volta aggiungendo i parametri correttamente evaluati
+            //    Se avessimo skippato lo step 2. allora avremmo oltre i parametri evaluati anche quelli
+            //    prima della evaluazione (ES: WIRE "wire" 0+1 1 -> Avremmo nella lista param: "wire" - 0 (ancora non ha incontrato il +) - 1 (risultato della somma 0+1) - 1)
+            param_i_start = 0;
+            while (*i + 1 < *stack_count && stack[*i + 1]->type != 0 && param_i_start < param_i_end)
+            {
+                (*i)++;
+                param_i_start++;
+
+                // Valutiamo l'espressione del parametro
+                CircuitObj *eval_obj = evaluate_single_expression(circuit, stack, i, stack_count);
+                append_obj_to_list(paramObjList, get_actual_value(circuit, eval_obj));
+                // append_obj_to_list(paramObjList, get_actual_value(circuit, eval_obj));
+            }
+
         }
 
         //paramObj = evaluate_single_expression(circuit, paramObjList->list.objs, &temp_i, &paramObjList->list.count);
@@ -2394,19 +2435,24 @@ int main(void)
     append_sym_to_table(circuit, create_symbol("NUMBER", Number_Wrap, SYM_FUNC, 0));
 
     FILE *fp = fopen("circuit.txt", "rb");
+    if(fp == NULL)
+    {
+        perror("FILE NOT FOUND");
+        return 1;
+    }
     fseek(fp, 0, SEEK_END);
     long file_size = ftell(fp);
 
     char *circuit_txt = malloc(file_size+1);
     fseek(fp, 0, SEEK_SET);
-
+    
     fread(circuit_txt, file_size, 1, fp);
     circuit_txt[file_size] = '\0';
     fclose(fp);
     
     RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt, 1);
 
-    int print = 1;
+    int print = 0;
     
     if(print)
     {
