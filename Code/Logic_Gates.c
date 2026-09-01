@@ -962,7 +962,7 @@ void append_obj_to_list(CircuitObj *list_obj, CircuitObj *obj)
 
 int can_parse(char c)
 {
-    return (isgraph(c) && c != ';' && c != '.' && c != '[' && c != '=' && c != '+' && c != '-' && c != '*' && c != '/');
+    return (isgraph(c) && c != ';' && c != '\n' && c != '.' && c != '[' && c != '=' && c != '+' && c != '-' && c != '*' && c != '/');
 }
 
 RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separator);
@@ -1205,20 +1205,19 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
 
     int row_count = 0;
     int element_count = 0;
+
+    element_count = 0;
+
+    rows = realloc(rows, sizeof(RowParser *) * (row_count + 2));
+    rows[row_count] = malloc(sizeof(RowParser));
+    rows[row_count]->row = row_count + 1;
+    rows[row_count]->content = create_list_obj();
+
     while(token[0] != '\0')
     {
-        element_count = 0;
-
-        rows = realloc(rows, sizeof(RowParser*) * (row_count + 2));
-        rows[row_count] = malloc(sizeof(RowParser));
-        rows[row_count]->row = row_count+1;
-        rows[row_count]->content = malloc(sizeof(CircuitObj));
-        rows[row_count]->content->list.objs = NULL;
-        rows[row_count]->content->list.count = 0;
-        
         while(token[0] != ';' && token[0] != '\n' && token[0] != '\0')
         {
-            CircuitObj *circuitObj = create_obj();
+            CircuitObj *circuitObj = NULL;
 
             while(isspace(token[0]) && token[0] != '\n' && token[0] != ';') token++;
 
@@ -1292,150 +1291,34 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
                 token++;
                 continue;
             }
-
-            /*
-            while (isgraph(token[0]) && token[0] != ';')
-            {
-                //if(token[0] == ']') {token++;}
-
-                previous = NULL;
-                if(token > txt) previous = token - 1;
-                
-                //if (token[0] == '.' || (token[0] == '[' && previous != NULL && isgraph(previous[0])))//forse previous == NULL non va bene
-                if ((token[0] == '.' && !index_parsed) || (token[0] == '['))//forse previous == NULL non va bene
-                {
-                    //printf("DOT/INDEX PARSING: %s\n", token);
-                    // parsa quello a sinistra
-                    // parsa quello a destra
-                    chain_processed = 1;
-
-                    if (left_obj == NULL)
-                    {
-                        int length = token - start;
-                        char *entire_token = malloc(length+1);
-                        memcpy(entire_token, start, length);
-                        entire_token[length] = '\0';
-
-                        //printf("LEFT START:%s\n", start);
-                        //printf("LEFT END:%s\n", token);
-                        printf("ENTIRE TOKEN:%s\n", entire_token);
-                        if(start > txt) previous = start - 1;
-                        if (start[0] == '[' && ((previous != NULL && !isgraph(previous[0])) || previous == NULL))
-                        {
-
-                            index_parsed = 0;
-                            token = start;
-                            left_obj = parse_obj(circuit, &token, start, 1);
-                        }else
-                        {
-                            if(start[0] == '[') {token = start;}
-                            left_obj = parse_obj(circuit, &token, start, 0);
-                            index_parsed = 1;
-                        }
-                        printf("LEFT START:%s\n", start);
-                        printf("LEFT END:%s\n", token);
-                        if(left_obj!=NULL) append_obj_to_list(dest, left_obj);
-                        printf("ECCO QUA IL DIO CANE 1: ");
-                        print_objects(left_obj);
-                        printf("\n");
-                    }
-                    else if (left_obj != NULL)
-                    {
-
-                        index_parsed = 0;
-                        if(start[0] == '[') {token = start;}
-                        next = parse_obj(circuit, &token, start, 0);
-                        printf("ECCO QUA IL DIO CANE 2: ");
-                        print_objects(next);
-                        printf("\n");
-
-                        switch (next->type)
-                        {
-                        case OBJ_DOT:
-                            next->prop.left = malloc(sizeof(CircuitObj));
-                            memcpy(next->prop.left, left_obj, sizeof(CircuitObj));
-                            break;
-                        case OBJ_INDEX:
-                            next->bracket.left = malloc(sizeof(CircuitObj));
-                            memcpy(next->bracket.left, left_obj, sizeof(CircuitObj));
-                            break;
-                        default:
-                            break;
-                        }
-
-                        if(next!=NULL) append_obj_to_list(dest, next);
-                        left_obj = next;
-                        next = NULL;
-                    }
-                     
-                    start = token;
-                }
-                token++;
-            }
-
-            end = token;
-            while (isspace(start[0]) && start[0] != '\n' && start[0] != ';') start++;
-            int length = end - start;
-
-            if(start[0] != ' ' && start[0] != ';' && start[0] != '\0' && start[0] != '\n' && token > start && length > 0 && isgraph(start[0]))
-            {
-                char *test_string = malloc(length+1);
-                memcpy(test_string, start, length);
-                test_string[length] = '\0';
-                if (next == NULL && left_obj != NULL)
-                {
-                    if (start[0] == '[') token = start;
-                    circuitObj = parse_obj(circuit, &token, start, 0);
-                    switch (circuitObj->type)
-                    {
-                    case OBJ_DOT:
-                        circuitObj->prop.left = malloc(sizeof(CircuitObj));
-                        memcpy(circuitObj->prop.left, left_obj, sizeof(CircuitObj));
-                        break;
-                    case OBJ_INDEX:
-                        circuitObj->bracket.left = malloc(sizeof(CircuitObj));
-                        memcpy(circuitObj->bracket.left, left_obj, sizeof(CircuitObj));
-                        break;
-                    default:
-                        break;
-                    }
-
-                    if(circuitObj!=NULL) append_obj_to_list(dest, circuitObj);
-                }
-
-                if (!chain_processed)
-                {
-                    char *previous = NULL;
-                    if (start > txt)
-                        previous = start - 1;
-                    if (start[0] == '[' && ((previous != NULL && !isgraph(previous[0])) || previous == NULL))
-                    {
-                        token = start;
-                        printf("SONO GAY! %s\n", token);
-                        circuitObj = parse_obj(circuit, &token, start, 1);
-                        add_separator = 0;
-                    }
-                    else
-                    {
-                        if(start[0] == '[') token = start;
-                        circuitObj = parse_obj(circuit, &token, start, 0);
-                    }
-                    if(circuitObj!=NULL) append_obj_to_list(dest, circuitObj);
-                }
-            }
-            */
         }
+
         if(add_separator && element_count > 0)
         {
+            //printf("RIGA NUMERO: %d E HA %d\n", row_count, (int)(token[0]));
             CircuitObj *circuitObj = create_obj();
             append_obj_to_list(circuit->context->stack, circuitObj);
+            append_obj_to_list(rows[row_count]->content, circuitObj);
+            element_count = 0;
         }
 
-        if(token[0] == ';' || token[0] == '\n') token++;
-        if(token[0] != ';' && element_count > 0) row_count++;
+        while(token[0] == ';' || token[0] == '\r') token++;
+        if(token[0] == '\n')
+        {
+            token++;
+            row_count++;
+
+            element_count = 0;
+
+            rows = realloc(rows, sizeof(RowParser *) * (row_count + 2));
+            rows[row_count] = malloc(sizeof(RowParser));
+            rows[row_count]->row = row_count + 1;
+            rows[row_count]->content = create_list_obj();
+        }
     }
+    row_count++;
     rows[row_count] = NULL;
-    return rows; 
+    return rows;
 }
 
 CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count);
@@ -1497,7 +1380,7 @@ CircuitObj *get_actual_value(Circuit *circuit, CircuitObj *obj)
 
 CircuitObj *execute_func(Circuit *circuit, CircuitObj *funcObj, CircuitObj *paramObj, int print)
 {
-    if(print) printf("FUNC TROVATA! (%s): \n", (*funcObj->sys)->name);
+    //if(print) printf("FUNC TROVATA! (%s): \n", (*funcObj->sys)->name);
 
     Symbol *currentFunc = NULL;
     currentFunc = *funcObj->sys;
@@ -1507,11 +1390,82 @@ CircuitObj *execute_func(Circuit *circuit, CircuitObj *funcObj, CircuitObj *para
     {
         CircuitObj *returned_obj = ((CircuitFunc)currentFunc->data)(circuit, paramObj, param_size);
         //free(paramObj); // Devi liberare anche i figli della list obj
-        if(print) printf("------------------------------------------\n");
+        //if(print) printf("------------------------------------------\n");
         return returned_obj;
     }else
     {
-        printf("\n");
+        //printf("\n");
+        return NULL;
+    }
+}
+
+CircuitObj *execute_math_expression(Circuit *circuit, int *i, CircuitObj **stack, int *stack_count, int type)
+{
+    int left_i = *i - 1;
+    CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count));
+    int right_i = *i + 1;
+    CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
+
+    //printf("ADDING LEFT: ");
+    //print_objects(circuit, left, 0);
+    //printf("\n");
+
+    //printf("ADDING RIGHT: ");
+    //print_objects(circuit, right, 0);
+    //printf("\n");
+
+    if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
+    {
+        //printf("RISULTATO:\n");
+        // 1. Calcola la somma e crea il nuovo oggetto
+
+        int val = 0;
+        switch(type)
+        {
+            case 0:
+                val = *(left->i) + *(right->i);
+                break;
+            case 1:
+                val = *(left->i) - *(right->i);
+                break;
+            case 2:
+                val = *(left->i) * *(right->i);
+                break;
+            case 3:
+                val = *(left->i) / *(right->i);
+                break;
+        }
+        CircuitObj *result_obj = create_int_obj(val);
+        //print_objects(circuit, result_obj, 0);
+        //printf("\n");
+        // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
+
+        // 2. Sostituisci il primo elemento con il risultato
+        stack[(*i) - 1] = result_obj;
+
+        // 3. Compatta lo stack eliminando l'operatore e il secondo operando
+        for (int k = (*i); k < *stack_count - 2; k++)
+        {
+            stack[k] = stack[k + 2];
+        }
+
+        // 4. Aggiorna i contatori dello stack
+        *stack_count -= 2;
+        // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
+        (*i)--;
+        return result_obj;
+    }
+    else
+    {
+        //(*i)--;
+        // printf("ERRORE: Operandi non validi per la somma (+)\n");
+        // printf("LEFT OPERAND: ");
+        // print_objects(circuit, left, 0);
+        // printf("\n");
+
+        // printf("RIGHT OPERAND: ");
+        // print_objects(circuit, right, 0);
+        // printf("\n");
         return NULL;
     }
 }
@@ -1641,225 +1595,25 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
         case OP_ADD:
             if (*i > 0 && *i < *stack_count - 1)
             {
-                int left_i = *i-1;
-                CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count)); 
-                int right_i = *i+1;
-                CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
-
-                printf("ADDING LEFT: ");
-                print_objects(circuit, left, 0);
-                printf("\n");
-
-                printf("ADDING RIGHT: ");
-                print_objects(circuit, right, 0);
-                printf("\n");
-
-                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
-                {
-                    printf("RISULTATO:\n");
-                    // 1. Calcola la somma e crea il nuovo oggetto
-                    int sum_val = *(left->i) + *(right->i);
-                    CircuitObj *result_obj = create_int_obj(sum_val);
-                    print_objects(circuit, result_obj, 0);
-                    printf("\n");
-                    // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
-
-                    // 2. Sostituisci il primo elemento con il risultato
-                    stack[(*i) - 1] = result_obj;
-
-                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
-                    for (int k = (*i); k < *stack_count - 2; k++)
-                    {
-                        stack[k] = stack[k + 2];
-                    }
-
-                    // 4. Aggiorna i contatori dello stack
-                    *stack_count -= 2;
-                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
-                    (*i)--;
-                    currentToken = result_obj;
-                }
-                else
-                {
-                    //(*i)--;
-                    printf("ERRORE: Operandi non validi per la somma (+)\n");
-                    printf("LEFT OPERAND: ");
-                    print_objects(circuit, left, 0);
-                    printf("\n");
-
-                    printf("RIGHT OPERAND: ");
-                    print_objects(circuit, right, 0);
-                    printf("\n");
-                    return NULL;
-                }
+                currentToken = execute_math_expression(circuit, i, stack, stack_count, 0);
             }
             break;
         case OP_SUB:
             if (*i > 0 && *i < *stack_count - 1)
             {
-                int left_i = *i-1;
-                CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count)); 
-                int right_i = *i+1;
-                CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
-
-                printf("SUBTRACTING LEFT: ");
-                print_objects(circuit, left, 0);
-                printf("\n");
-
-                printf("SUBTRACTING RIGHT: ");
-                print_objects(circuit, right, 0);
-                printf("\n");
-
-                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
-                {
-                    printf("RISULTATO:\n");
-                    // 1. Calcola la somma e crea il nuovo oggetto
-                    int sub_val = *(left->i) - *(right->i);
-                    CircuitObj *result_obj = create_int_obj(sub_val);
-                    print_objects(circuit, result_obj, 0);
-                    printf("\n");
-                    // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
-
-                    // 2. Sostituisci il primo elemento con il risultato
-                    stack[(*i) - 1] = result_obj;
-
-                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
-                    for (int k = (*i); k < *stack_count - 2; k++)
-                    {
-                        stack[k] = stack[k + 2];
-                    }
-
-                    // 4. Aggiorna i contatori dello stack
-                    *stack_count -= 2;
-                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
-                    (*i)--;
-                    currentToken = result_obj;
-                }
-                else
-                {
-                    //(*i)--;
-                    printf("ERRORE: Operandi non validi per la sottrazione (-)\n");
-                    printf("LEFT OPERAND: ");
-                    print_objects(circuit, left, 0);
-                    printf("\n");
-
-                    printf("RIGHT OPERAND: ");
-                    print_objects(circuit, right, 0);
-                    printf("\n");
-                    return NULL;
-                }
+                currentToken = execute_math_expression(circuit, i, stack, stack_count, 1); 
             }
             break;
         case OP_MOL:
             if (*i > 0 && *i < *stack_count - 1)
             {
-                int left_i = *i-1;
-                CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count)); 
-                int right_i = *i+1;
-                CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
-
-                printf("MULTIPLYING LEFT: ");
-                print_objects(circuit, left, 0);
-                printf("\n");
-
-                printf("MULTIPLYING RIGHT: ");
-                print_objects(circuit, right, 0);
-                printf("\n");
-
-                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
-                {
-                    printf("RISULTATO:\n");
-                    // 1. Calcola la somma e crea il nuovo oggetto
-                    int mol_val = *(left->i) * *(right->i);
-                    CircuitObj *result_obj = create_int_obj(mol_val);
-                    print_objects(circuit, result_obj, 0);
-                    printf("\n");
-                    // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
-
-                    // 2. Sostituisci il primo elemento con il risultato
-                    stack[(*i) - 1] = result_obj;
-
-                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
-                    for (int k = (*i); k < *stack_count - 2; k++)
-                    {
-                        stack[k] = stack[k + 2];
-                    }
-
-                    // 4. Aggiorna i contatori dello stack
-                    *stack_count -= 2;
-                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
-                    (*i)--;
-                    currentToken = result_obj;
-                }
-                else
-                {
-                    //(*i)--;
-                    printf("ERRORE: Operandi non validi per la moltiplicazione (*)\n");
-                    printf("LEFT OPERAND: ");
-                    print_objects(circuit, left, 0);
-                    printf("\n");
-
-                    printf("RIGHT OPERAND: ");
-                    print_objects(circuit, right, 0);
-                    printf("\n");
-                    return NULL;
-                }
+                currentToken = execute_math_expression(circuit, i, stack, stack_count, 2); 
             }
             break;
         case OP_DIV:
             if (*i > 0 && *i < *stack_count - 1)
             {
-                int left_i = *i-1;
-                CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count)); 
-                int right_i = *i+1;
-                CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
-
-                printf("DIVIDING LEFT: ");
-                print_objects(circuit, left, 0);
-                printf("\n");
-
-                printf("DIVIDING RIGHT: ");
-                print_objects(circuit, right, 0);
-                printf("\n");
-
-                if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
-                {
-                    printf("RISULTATO:\n");
-                    // 1. Calcola la somma e crea il nuovo oggetto
-                    int div_val = *(left->i) / *(right->i);
-                    CircuitObj *result_obj = create_int_obj(div_val);
-                    print_objects(circuit, result_obj, 0);
-                    printf("\n");
-                    // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
-
-                    // 2. Sostituisci il primo elemento con il risultato
-                    stack[(*i) - 1] = result_obj;
-
-                    // 3. Compatta lo stack eliminando l'operatore e il secondo operando
-                    for (int k = (*i); k < *stack_count - 2; k++)
-                    {
-                        stack[k] = stack[k + 2];
-                    }
-
-                    // 4. Aggiorna i contatori dello stack
-                    *stack_count -= 2;
-                    // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
-                    (*i)--;
-                    currentToken = result_obj;
-                }
-                else
-                {
-                    //(*i)--;
-                    printf("ERRORE: Operandi non validi per la divisione (/)\n");
-                    printf("LEFT OPERAND: ");
-                    print_objects(circuit, left, 0);
-                    printf("\n");
-
-                    printf("RIGHT OPERAND: ");
-                    print_objects(circuit, right, 0);
-                    printf("\n");
-                    return NULL;
-                }
+                currentToken = execute_math_expression(circuit, i, stack, stack_count, 3); 
             }
             break;
         default:
@@ -1934,8 +1688,9 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
 
         //paramObj = evaluate_single_expression(circuit, paramObjList->list.objs, &temp_i, &paramObjList->list.count);
         //printf("PARAMETRI PARSATI: ");
-        //print_objects(circuit, paramObjList);
-        //printf("-----------\n");
+        //print_objects(circuit, currentToken, 0);
+        //print_objects(circuit, paramObjList, 0);
+        //printf("------FINE PARAM-----\n");
         CircuitObj *returned_obj = execute_func(circuit, currentToken, paramObjList, 1);
         if (returned_obj == NULL)
         {
@@ -1966,39 +1721,6 @@ void execute_parsing(Circuit *circuit)
 {
     CircuitObj *stack = circuit->context->stack;
     evaluate_expression(circuit, stack); 
-
-    /*
-    for(int i = 0; i < stack_count; i++)
-    {
-        CircuitObj *currentToken = stack[i];
-        CircuitObj *nextToken = NULL;
-        if(i + 1 < stack_count-1) nextToken = stack[i+1];
-
-        if(nextToken != NULL && nextToken->type == OBJ_DOT)
-        {
-            currentToken = get_actual_value(nextToken);
-        }
-        else if(currentToken != NULL && currentToken->type == OBJ_VAR)
-        {
-            CircuitObj *innerObj = get_actual_value(stack[i]);
-
-            if(i < stack_count - 1 && stack[i+1]->type != OBJ_OP) innerObj->mode = READ_WRITE;
-            currentToken = innerObj;
-        }
-
-        switch (currentToken->type)
-        {
-            case OBJ_FUNC:
-                if(currentToken->mode != READ_WRITE) break;
-                CircuitObj *returned_obj = execute_func(circuit, stack, currentToken, i, 1);
-                if(returned_obj == NULL) {printf("OBJ: \"%s\" CRASHED!\n", return_print_objects(currentToken)); return;}
-                break;
-            
-            default:
-                break;
-        } 
-    }
-    */
 }
 
 Wire *find_wire_by_name(Circuit *circuit, char *name);
@@ -2449,10 +2171,11 @@ int main(void)
     fread(circuit_txt, file_size, 1, fp);
     circuit_txt[file_size] = '\0';
     fclose(fp);
-    
-    RowParser **string_list = parse(circuit, circuit->context->stack, circuit_txt, 1);
 
-    int print = 0;
+    RowParser **row_list = parse(circuit, circuit->context->stack, circuit_txt, 1);
+
+    int print = 1;
+    int print_partial = 1;
     
     if(print)
     {
@@ -2465,6 +2188,18 @@ int main(void)
             print_objects(circuit, circuit->context->stack->list.objs[i], 0);
         }
         printf("FINE\n");
+
+        if(!print_partial)
+        {
+            int i = 0;
+            while (row_list[i] != NULL)
+            {
+                printf("ROW: %d) ", row_list[i]->row);
+                print_objects(circuit, row_list[i]->content, 0);
+                printf("\n");
+                i++;
+            }
+        }
     }
     
     execute_parsing(circuit);
@@ -2480,6 +2215,18 @@ int main(void)
             print_objects(circuit, circuit->context->stack->list.objs[i], 1);
         }
         printf("FINE\n");
+
+        if(!print_partial)
+        {
+            int i = 0;
+            while (row_list[i] != NULL)
+            {
+                printf("ROW: %d) ", row_list[i]->row);
+                print_objects(circuit, row_list[i]->content, 1);
+                printf("\n");
+                i++;
+            }
+        }
     }
 
     return 0;
