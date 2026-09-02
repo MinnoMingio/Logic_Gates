@@ -1321,7 +1321,7 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
     return rows;
 }
 
-CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count);
+CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count, int flat_math);
 CircuitObj *evaluate_expression(Circuit *circuit, CircuitObj *expression);
 CircuitObj *evaluate_index_expr(Circuit *circuit, CircuitObj *index_expr)
 {
@@ -1329,7 +1329,7 @@ CircuitObj *evaluate_index_expr(Circuit *circuit, CircuitObj *index_expr)
     CircuitObj *index_obj = NULL;
     for(int i = 0; i < index_expr->list.count; i++)
     {
-        index_obj = evaluate_single_expression(circuit, expression, &i, &index_expr->list.count);
+        index_obj = evaluate_single_expression(circuit, expression, &i, &index_expr->list.count, 1);
     }
     return get_actual_value(circuit, index_obj);
 }
@@ -1402,87 +1402,64 @@ CircuitObj *execute_func(Circuit *circuit, CircuitObj *funcObj, CircuitObj *para
 CircuitObj *execute_math_expression(Circuit *circuit, int *i, CircuitObj **stack, int *stack_count, int type)
 {
     int left_i = *i - 1;
-    CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count));
+    CircuitObj *left = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &left_i, stack_count, 0));
+    int left_value = *left->i;
+
     int right_i = *i + 1;
-    CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count));
-
-    //printf("ADDING LEFT: ");
-    //print_objects(circuit, left, 0);
-    //printf("\n");
-
-    //printf("ADDING RIGHT: ");
-    //print_objects(circuit, right, 0);
-    //printf("\n");
+    CircuitObj *changed_obj = NULL;
+    if(*i < *stack_count-1 && *(stack[right_i]->i) > 0 && type == 1)
+    {
+        changed_obj = stack[right_i];
+        *changed_obj->i *= -1;
+    }
+    CircuitObj *right = get_actual_value(circuit, evaluate_single_expression(circuit, stack, &right_i, stack_count, 0));
+    //CircuitObj *right = get_actual_value(circuit, stack[right_i]);
+    int right_value = *right->i;
 
     if (left != NULL && right != NULL && left->type == OBJ_INT && right->type == OBJ_INT)
     {
-        //printf("RISULTATO:\n");
-        // 1. Calcola la somma e crea il nuovo oggetto
-
         int val = 0;
         switch(type)
         {
             case 0:
-                val = *(left->i) + *(right->i);
-                break;
             case 1:
-                val = *(left->i) - *(right->i);
+                val = left_value + right_value;
                 break;
             case 2:
-                val = *(left->i) * *(right->i);
+                val = left_value * right_value;
                 break;
             case 3:
-                val = *(left->i) / *(right->i);
+                val = left_value / right_value;
                 break;
         }
         CircuitObj *result_obj = create_int_obj(val);
-        //print_objects(circuit, result_obj, 0);
-        //printf("\n");
-        // con le liste e dot non funziona in quanto non vengono compattate e quindi rimane la var di accesso a sinistra ancora presente (tipo var.name var rimane mentre name viene sostituito e metti che fai 1 + var.name)
-
-        // 2. Sostituisci il primo elemento con il risultato
-        stack[(*i) - 1] = result_obj;
-
-        // 3. Compatta lo stack eliminando l'operatore e il secondo operando
-        for (int k = (*i); k < *stack_count - 2; k++)
+        if (changed_obj != NULL)
         {
-            stack[k] = stack[k + 2];
+            *changed_obj->i *= -1;
         }
 
-        // 4. Aggiorna i contatori dello stack
-        *stack_count -= 2;
-        // 5. Riporta l'indice indietro di uno per bilanciare il ciclo
-        (*i)--;
         return result_obj;
     }
     else
     {
-        //(*i)--;
-        // printf("ERRORE: Operandi non validi per la somma (+)\n");
-        // printf("LEFT OPERAND: ");
-        // print_objects(circuit, left, 0);
-        // printf("\n");
-
-        // printf("RIGHT OPERAND: ");
-        // print_objects(circuit, right, 0);
-        // printf("\n");
         return NULL;
     }
 }
 
-CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count)
+CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count, int flat_math)
 {
     int flat_i = 0;
     int saved_i = *i;
     // APPIATTISCI LO STACK ELIMINANDO LE VAR PRIMA DEI DOT E DEGLI INDEX!
-    while((*i)+1 < *stack_count && (stack[(*i) + 1]->type == OBJ_DOT || stack[(*i) + 1]->type == OBJ_INDEX))
+    while((*i)+1 < *stack_count && (stack[(*i)+1]->type == OBJ_DOT || stack[(*i)+1]->type == OBJ_INDEX || (flat_math && stack[(*i)+1]->type == OBJ_OP && stack[(*i)+1]->op->type != OP_ASSIGN)))
     {
         //stack[(*i)] = stack[(*i)+1];
         (*i)++;
         flat_i++;
     }
-    *i = saved_i;
+    //*i = saved_i;
 
+    /*
     for (int k = (*i); k < *stack_count - flat_i; k++)
     {
         stack[k] = stack[k + flat_i];
@@ -1490,6 +1467,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
 
     // 4. Aggiorna i contatori dello stack
     *stack_count -= flat_i;
+    */
 
     CircuitObj *currentToken = stack[*i];
     CircuitObj *previous = NULL;
@@ -1510,7 +1488,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
             while (*i+1 < *stack_count && stack[*i+1] != NULL && stack[*i+1]->type != 0)
             {
                 (*i)++;
-                append_obj_to_list(assign_expression, evaluate_single_expression(circuit, stack, i, stack_count));
+                append_obj_to_list(assign_expression, evaluate_single_expression(circuit, stack, i, stack_count, flat_math));
             }
             int temp_i = 0;
             //next = evaluate_single_expression(circuit, assign_expression->list.objs, &temp_i, &assign_expression->list.count);
@@ -1629,6 +1607,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
         currentToken = innerObj;
     }
 
+    if(currentToken != NULL)
     switch (currentToken->type)
     {
     case OBJ_FUNC:
@@ -1658,7 +1637,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 start_index++;
 
                 // Valutiamo l'espressione del parametro
-                CircuitObj *eval_obj = evaluate_single_expression(circuit, stack, i, stack_count);
+                CircuitObj *eval_obj = evaluate_single_expression(circuit, stack, i, stack_count, flat_math);
             }
 
             length = *i - start_index;
@@ -1679,7 +1658,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
                 param_i_start++;
 
                 // Valutiamo l'espressione del parametro
-                CircuitObj *eval_obj = evaluate_single_expression(circuit, stack, i, stack_count);
+                CircuitObj *eval_obj = evaluate_single_expression(circuit, stack, i, stack_count, flat_math);
                 append_obj_to_list(paramObjList, get_actual_value(circuit, eval_obj));
                 // append_obj_to_list(paramObjList, get_actual_value(circuit, eval_obj));
             }
@@ -1712,7 +1691,7 @@ CircuitObj* evaluate_expression(Circuit *circuit, CircuitObj *expression)
     CircuitObj *return_obj = NULL;
     for (int i = 0; i < expression->list.count; i++)
     {
-        return_obj = evaluate_single_expression(circuit, expression->list.objs, &i, &expression->list.count); 
+        return_obj = evaluate_single_expression(circuit, expression->list.objs, &i, &expression->list.count, 1); 
     }
     return return_obj;
 }
@@ -2142,6 +2121,7 @@ CircuitObj* Number_Wrap(Circuit *circuit, CircuitObj *params, int count)
 
 int main(void)
 {
+    system("cls");
     Circuit *circuit = create_circuit();
 
     append_sym_to_table(circuit, create_symbol("OR", Or_Wrap, SYM_FUNC, 3));

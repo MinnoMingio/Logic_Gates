@@ -1,2 +1,5 @@
 var num = 10;
-PRINT num+5+3;
+PRINT num*5-3+5;
+PRINT 1+1+1+1-1;
+PRINT WIRE "cavo" 1 0;
+PRINT NUMBER+1;
