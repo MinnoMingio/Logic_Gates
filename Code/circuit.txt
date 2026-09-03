@@ -1,5 +1,4 @@
-var num = 10+1;
-PRINT 10*5;
-PRINT 1+1+1+1-1;
-PRINT WIRE "cavo" 1 0;
-PRINT NUMBER+1;
+var num = 10+5*5/2-2+5;
+PRINT NUMBER+1+1*5;
+PRINT WIRE "test" 1+1 0-1;
+var and = AND WIRE "in" 1 0+1 WIRE "a" 1+1 0-1 WIRE "b" 1 0+1;
