@@ -1825,10 +1825,14 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
         if(break_next)
         {
             last_i = *i;
+            
             break;
         }
         if(*i+1 < expression_count && expression_stack[(*i)]->type != OBJ_OP && expression_stack[(*i) + 1]->type != OBJ_OP)
         {
+            printf("LAST I: ");
+            print_objects(circuit, expression_stack[*i], 0);
+            printf("\n");
             break_next = 1;
         }
 
@@ -1842,6 +1846,7 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
                     // Rimuovi dalla lista (pop)
                     CircuitObj *last_op_obj = pop_obj_from_list(op_list, 0);
                     Operator *last_op = last_op_obj->op;
+                    // Non modificare direttamente l'ultimo op, ma usa un altro op cosi' da lasciare il codice originale intatto
                      
                     CircuitObj *right_node_obj = pop_obj_from_list(node_list, 0);
                     last_op->right = right_node_obj;
@@ -1882,6 +1887,7 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
         append_obj_to_list(node_list, ast_obj, 1);
     }
 
+    last_i--;
     if (expression_stack[last_i]->type == OBJ_FUNC)
     {
         CircuitObj *funcObj = expression_stack[last_i];
@@ -1891,7 +1897,7 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
         int arg_count = (*funcObj->sys)->param_count;
         if (arg_count > 0)
         {
-            (*i)++;
+            //(*i)++;
             for (int j = 0; j < arg_count; j++)
             {
                 CircuitObj *arg_result = get_node_list(circuit, expression, i);
@@ -1901,9 +1907,10 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
             // CircuitObj *arg_node_list = get_node_list(circuit, expression, i);
             //printf("PARAMETRI DI %s: ", (*funcObj->sys)->name);
             //print_objects(circuit, arg_list, 0);
+
+            (*funcObj->sys)->param_list = arg_list;
         }
 
-        (*funcObj->sys)->param_list = arg_list;
         //append_obj_to_list(node_list, funcObj, 1);
     }
 
