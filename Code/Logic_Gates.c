@@ -1806,7 +1806,61 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
 
 CircuitObj *evaluate_node(Circuit *circuit, CircuitObj *node)
 {
-    
+    if(node->type == OBJ_OP)
+    {
+        CircuitObj *left = evaluate_node(circuit, node->op->left);
+        CircuitObj *right = evaluate_node(circuit, node->op->right);
+        int l_value = 0;
+        int r_value = 0;
+        switch (node->op->type)
+        {
+        case OP_ASSIGN:
+            (*left->sys)->data = right;
+            return left;
+            break;
+        case OP_ADD:
+            l_value = *(get_actual_value(circuit, left)->i);
+            r_value = *(get_actual_value(circuit, right)->i);
+            return create_int_obj(l_value+r_value);
+            break;    
+        case OP_SUB:
+            l_value = *(get_actual_value(circuit, left)->i);
+            r_value = *(get_actual_value(circuit, right)->i);
+            return create_int_obj(l_value-r_value);
+            break;
+        case OP_MOL:
+            l_value = *(get_actual_value(circuit, left)->i);
+            r_value = *(get_actual_value(circuit, right)->i);
+            return create_int_obj(l_value*r_value);
+            break;
+        case OP_DIV:
+            l_value = *(get_actual_value(circuit, left)->i);
+            r_value = *(get_actual_value(circuit, right)->i);
+            return create_int_obj(l_value/r_value);
+            break;
+        default:
+            break;
+        }
+    }
+    else if(node->type == OBJ_FUNC)
+    {
+        Symbol *funcObj = (*node->sys);
+        CircuitObj *param_list = funcObj->param_list;
+        CircuitObj *evaluated_param_list = create_list_obj();
+        if(param_list != NULL)
+        {
+            for (int i = 0; i < param_list->list.count; i++)
+            {
+                append_obj_to_list(evaluated_param_list, evaluate_node(circuit, param_list->list.objs[i]), 1);
+            }
+        }
+        
+        return execute_func(circuit, node, evaluated_param_list, 1);
+    }
+    else
+    {
+        return node;
+    }
 }
 
 CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
@@ -1822,17 +1876,24 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
     for (*i; *i < expression_count; (*i)++)
     {
         if(expression_stack[*i] == NULL) continue;
+
+        // Ha precedenza su tutto
         if(break_next)
         {
             last_i = *i;
-            
             break;
+        }
+
+        // Se non ci dobbiamo fermare allora skippiamo i left obj dei prop o delle liste
+        while (*i + 1 < expression_count && (expression_stack[*i + 1]->type == OBJ_DOT || expression_stack[*i + 1]->type == OBJ_INDEX))
+        {
+            (*i)++;
         }
         if(*i+1 < expression_count && expression_stack[(*i)]->type != OBJ_OP && expression_stack[(*i) + 1]->type != OBJ_OP)
         {
-            printf("LAST I: ");
-            print_objects(circuit, expression_stack[*i], 0);
-            printf("\n");
+            //printf("LAST I: ");
+            //print_objects(circuit, expression_stack[*i], 0);
+            //printf("\n");
             break_next = 1;
         }
 
@@ -1888,11 +1949,12 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
     }
 
     last_i--;
+    if(last_i >= 0)
     if (expression_stack[last_i]->type == OBJ_FUNC)
     {
         CircuitObj *funcObj = expression_stack[last_i];
-        printf("\nFUNC: ");
-        print_objects(circuit, funcObj, 0);
+        //printf("\nFUNC: ");
+        //print_objects(circuit, funcObj, 0);
         CircuitObj *arg_list = create_list_obj();
         int arg_count = (*funcObj->sys)->param_count;
         if (arg_count > 0)
@@ -1919,18 +1981,29 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
 
 CircuitObj* evaluate_expression(Circuit *circuit, CircuitObj *expression)
 {
+    //printf("EXPRESSION: ");
+    //print_objects(circuit, expression, 0);
+    //printf("\n");
     int i = 0;
     CircuitObj *node_list = get_node_list(circuit, expression, &i);
     CircuitObj **expression_stack = node_list->list.objs;
     int expression_count = node_list->list.count;
 
+    /* 
     printf("\nNODE_LIST: ");
     print_objects(circuit, node_list, 0);
-    printf("\n");
     printf("---------------------------------------------------");
+    printf("\n");
+    */
+
     for (int i = 0; i < expression_count; i++)
     {
-        evaluate_node(circuit, expression_stack[i]);
+        if(expression_stack[i]->type == 0) continue;
+
+        CircuitObj *evaluated_node = evaluate_node(circuit, expression_stack[i]);
+        //printf("%d)\n", i);
+        //if(evaluated_node != NULL && evaluated_node->type != 0) print_objects(circuit, evaluated_node, 0);
+        //printf("\n");
     }
 }
 
@@ -2317,6 +2390,11 @@ CircuitObj *Print_Wrap(Circuit *circuit, CircuitObj *params, int count)
             print_objects(circuit, obj, 0);
             //Print_Wrap(circuit, obj, obj->list.count); 
         }
+        else if(obj->type == OBJ_FUNC)
+        {
+            printf(">> ");
+            print_objects(circuit, obj, 0);
+        }
     }
     CircuitObj *void_obj = malloc(sizeof(CircuitObj));
     void_obj->type = OBJ_VOID;
@@ -2398,7 +2476,7 @@ int main(void)
 
     RowParser **row_list = parse(circuit, circuit->context->stack, circuit_txt, 1);
 
-    int print = 1;
+    int print = 0;
     int print_partial = 1;
     
     if(print)

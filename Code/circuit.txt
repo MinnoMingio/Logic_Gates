@@ -1,4 +1,7 @@
+PRINT 1+1*10/2-123124*23-1-1-1*3;
 var num = 10+5*5/2-2+5;
 PRINT NUMBER+1+1*5;
-PRINT WIRE "test" 1+1 0-1;
-var and = AND WIRE "in" 1 0+1 WIRE "a" 1+1 0-1 WIRE "b" 1 0+1*5-2-NUMBER;
+PRINT WIRE "test" 1*2-2/2 0-1;
+var and = AND WIRE "in" 1 0 WIRE "a" 1 0 WIRE "b" 1 0;
+RUN;
+PRINT and.input_wires[0].power+5;
