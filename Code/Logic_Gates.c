@@ -1414,20 +1414,25 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
     return rows;
 }
 
+//Setto i prototypes
 CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int *i, int *stack_count);
 CircuitObj *evaluate_expression(Circuit *circuit, CircuitObj *expression);
+CircuitObj *evaluate_node(Circuit *circuit, CircuitObj *node);
+CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i);
+
 CircuitObj *evaluate_index_expr(Circuit *circuit, CircuitObj *index_expr)
 {
-    CircuitObj **expression = index_expr->list.objs;
+    int i = 0;
+    CircuitObj **expression = get_node_list(circuit, index_expr, &i)->list.objs;
     CircuitObj *index_obj = NULL;
-    for(int i = 0; i < index_expr->list.count; i++)
-    {
-        index_obj = evaluate_single_expression(circuit, expression, &i, &index_expr->list.count);
-    }
-    return get_actual_value(circuit, index_obj);
+    //for(int i = 0; i < index_expr->list.count; i++)
+    //{
+        //index_obj = evaluate_single_expression(circuit, expression, &i, &index_expr->list.count);
+    //}
+    return get_actual_value(circuit, evaluate_node(circuit, expression[0]));
 }
 
-CircuitObj *search_prop(Circuit *circuit, CircuitObj *obj, char *prop_name)
+CircuitObj *search_prop(CircuitObj *obj, char *prop_name)
 {
     for(int i = 0; i < obj->prop_count; i++)
     {
@@ -1442,7 +1447,7 @@ CircuitObj *search_prop(Circuit *circuit, CircuitObj *obj, char *prop_name)
 CircuitObj *get_prop_value(Circuit *circuit, CircuitObj *dot_obj, char *prop_name)
 {
     CircuitObj *real_obj = get_actual_value(circuit, dot_obj);
-    return search_prop(circuit, real_obj, prop_name);
+    return search_prop(real_obj, prop_name);
 }
 
 CircuitObj *get_actual_value(Circuit *circuit, CircuitObj *obj)
@@ -1794,7 +1799,7 @@ CircuitObj *evaluate_single_expression(Circuit *circuit, CircuitObj **stack, int
             printf("OBJ: \"%s\" CRASHED!\n", return_print_objects(circuit, currentToken));
             return NULL;
         }
-
+         
         currentToken = returned_obj;
         break;
 
@@ -1815,13 +1820,39 @@ CircuitObj *evaluate_node(Circuit *circuit, CircuitObj *node)
         switch (node->op->type)
         {
         case OP_ASSIGN:
-            (*left->sys)->data = right;
+            if(left->type == OBJ_DOT || left->type == OBJ_INDEX)
+            {
+                CircuitObj *prop = get_actual_value(circuit, left);
+
+                switch (prop->type)
+                {
+                case OBJ_INT:
+                    *prop->i = *get_actual_value(circuit, right)->i; 
+                    break;
+                case OBJ_STR:
+                    *prop->str = *get_actual_value(circuit, right)->str;
+                
+                default:
+                    break;
+                }
+            }
+            else if(left->type == OBJ_VAR)
+            {
+                (*left->sys)->data = right;
+            }
             return left;
             break;
         case OP_ADD:
-            l_value = *(get_actual_value(circuit, left)->i);
-            r_value = *(get_actual_value(circuit, right)->i);
-            return create_int_obj(l_value+r_value);
+            
+            CircuitObj *actual_left = get_actual_value(circuit, left); 
+            CircuitObj *actual_right = get_actual_value(circuit, right); 
+            
+            if(actual_left->type == OBJ_INT && actual_right->type == OBJ_INT)
+            {
+                l_value = *(actual_left->i);
+                r_value = *(actual_right->i);
+                return create_int_obj(l_value + r_value);
+            }
             break;    
         case OP_SUB:
             l_value = *(get_actual_value(circuit, left)->i);
@@ -1851,7 +1882,7 @@ CircuitObj *evaluate_node(Circuit *circuit, CircuitObj *node)
         {
             for (int i = 0; i < param_list->list.count; i++)
             {
-                append_obj_to_list(evaluated_param_list, evaluate_node(circuit, param_list->list.objs[i]), 1);
+                append_obj_to_list(evaluated_param_list, get_actual_value(circuit, evaluate_node(circuit, param_list->list.objs[i])), 1);
             }
         }
         
@@ -2446,7 +2477,7 @@ int main(void)
     system("cls");
     Circuit *circuit = create_circuit();
 
-    append_sym_to_table(circuit, create_symbol("OR", Or_Wrap, SYM_FUNC, 3));
+    append_sym_to_table(circuit, create_symbol("OR", Or_Wrap, SYM_FUNC, 2));
     append_sym_to_table(circuit, create_symbol("AND", And_Wrap, SYM_FUNC, 3));
     append_sym_to_table(circuit, create_symbol("NOT", Not_Wrap, SYM_FUNC, 2));
     append_sym_to_table(circuit, create_symbol("NOR", Nor_Wrap, SYM_FUNC, 3));
