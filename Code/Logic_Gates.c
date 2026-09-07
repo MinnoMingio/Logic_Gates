@@ -1941,14 +1941,16 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
                     // Non modificare direttamente l'ultimo op, ma usa un altro op cosi' da lasciare il codice originale intatto
                      
                     CircuitObj *right_node_obj = pop_obj_from_list(node_list, 0);
-                    last_op->right = right_node_obj;
-
                     CircuitObj *left_node_obj = pop_obj_from_list(node_list, 0);
-                    last_op->left = left_node_obj;
+                    
+                    CircuitObj *ast_obj = create_obj(); 
+                    Operator *ast_op = create_op(last_op->name, last_op->type);
+                    ast_op->right = right_node_obj;
+                    ast_op->left = left_node_obj;
 
-                    CircuitObj *ast_obj = create_obj();
                     ast_obj->type = OBJ_OP;
-                    ast_obj->op = last_op;
+                    ast_obj->op = ast_op;
+                    
                     append_obj_to_list(node_list, ast_obj, 1);
                      
                     op_count = op_list->list.count;
@@ -1968,14 +1970,16 @@ CircuitObj *get_node_list(Circuit *circuit, CircuitObj *expression, int *i)
         Operator *last_op = last_op_obj->op;
 
         CircuitObj *right_node_obj = pop_obj_from_list(node_list, 0);
-        last_op->right = right_node_obj;
-
         CircuitObj *left_node_obj = pop_obj_from_list(node_list, 0);
-        last_op->left = left_node_obj;
-
+        
         CircuitObj *ast_obj = create_obj();
+        Operator *ast_op = create_op(last_op->name, last_op->type);
+        ast_op->right = right_node_obj;
+        ast_op->left = left_node_obj;
+        
         ast_obj->type = OBJ_OP;
-        ast_obj->op = last_op;
+        ast_obj->op = ast_op;
+        
         append_obj_to_list(node_list, ast_obj, 1);
     }
 
