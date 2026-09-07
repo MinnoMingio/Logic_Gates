@@ -1820,7 +1820,11 @@ CircuitObj *evaluate_node(Circuit *circuit, CircuitObj *node)
         switch (node->op->type)
         {
         case OP_ASSIGN:
-            if(left->type == OBJ_DOT || left->type == OBJ_INDEX)
+            if(left->type == OBJ_VAR)
+            {
+                (*left->sys)->data = right;
+            }
+            else
             {
                 CircuitObj *prop = get_actual_value(circuit, left);
 
@@ -1835,10 +1839,6 @@ CircuitObj *evaluate_node(Circuit *circuit, CircuitObj *node)
                 default:
                     break;
                 }
-            }
-            else if(left->type == OBJ_VAR)
-            {
-                (*left->sys)->data = right;
             }
             return left;
             break;
