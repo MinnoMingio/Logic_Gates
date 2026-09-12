@@ -49,3 +49,4 @@ var nomignolo = "cacca";
 var test = AND WIRE nomignolo 1 0 WIRE "sad" 1 0 WIRE "das" 1 0;
 PRINT test.input_wires[0].power;
 PRINT 1+1*5;
+if;

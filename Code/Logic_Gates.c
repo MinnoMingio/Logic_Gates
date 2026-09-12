@@ -15,7 +15,10 @@
 #define OBJ_OP    8
 #define OBJ_DOT   9
 #define OBJ_INDEX 10
-#define OBJ_VOID  11
+#define OBJ_BOOL  11
+#define OBJ_BLOCK 12
+#define OBJ_IF    13
+#define OBJ_VOID  14
 
 #define READ_ONLY  0
 #define READ_WRITE 1
@@ -69,12 +72,6 @@ typedef struct Operator
     OpType type;
 } Operator;
 
-//typedef struct OperatorTable
-//{
-    //Operator **ops;
-    //int count;
-//} OperatorTable;
-
 typedef struct ObjProp
 {
     char *name;
@@ -88,14 +85,14 @@ typedef struct CircuitObj
     union
     {
         // PROVO A METTERE UN * IN PIU' DI FRONTE AD OGNI TIPO PER POTER PASSARE IL TIPO ATTRAVERSO L'INDIRIZZO E NON SOLO VALORE (COSI' DA FACILITARE LE PROPS).
-        int *i;
+        int *i; // sia per operazioni sia per bool;
         char **str;
         Symbol **sys;
         Operator *op;
         Wire **wire;
         Transistor **transistor;
         Circuit *circuit;
-        struct List
+        struct List // sia per liste che per blocchi
         {
             CircuitObj **objs;
             int count;
@@ -110,6 +107,11 @@ typedef struct CircuitObj
             CircuitObj *left;
             CircuitObj *index;
         } bracket;
+        struct If
+        {
+            int line;
+            CircuitObj *statement;     
+        } condition;
     };
     ObjProp **props;
     int prop_count;
@@ -1142,6 +1144,13 @@ CircuitObj *parse_obj(Circuit *circuit, char **token, char *start, int is_list)
         op->prec = 3;
         circuitObj->op = op;
     }
+    else if(strcmp(final_token, "if") == 0)
+    {
+        printf("IF TROVATO!\n");
+        circuitObj->type = OBJ_IF;
+        circuitObj->condition.line = 0;
+        circuitObj->condition.statement = NULL;
+    }
     else if (strcmp(final_token, "var") == 0)
     {
         while (isspace((*token)[0]) && (*token)[0] != '\n' && (*token)[0] != '\0' && (*token)[0] != ';')
@@ -1327,6 +1336,11 @@ RowParser **parse(Circuit *circuit, CircuitObj *dest, char *txt, int add_separat
             if(dest->list.count > 0)
             {
                 previous_obj = dest->list.objs[dest->list.count - 1];
+            }
+
+            if(previous_obj != NULL && previous_obj->type == OBJ_IF)
+            {
+                
             }
 
             if (token[0] == '\"')
