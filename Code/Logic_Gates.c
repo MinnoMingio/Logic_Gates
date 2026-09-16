@@ -2232,7 +2232,7 @@ int main(void)
     append_sym_to_table(context, create_symbol("UPDATE_W", Update_Wire_Wrap, SYM_FUNC, 3));
     append_sym_to_table(context, create_symbol("WIRE", Wire_Wrap, SYM_FUNC, 4));
     append_sym_to_table(context, create_symbol("PRINT", Print_Wrap, SYM_FUNC, 1));
-    append_sym_to_table(context, create_symbol("RUN", Run_Wrap, SYM_FUNC, 0));
+    append_sym_to_table(context, create_symbol("RUN", Run_Wrap, SYM_FUNC, 1));
     append_sym_to_table(context, create_symbol("NUMBER", Number_Wrap, SYM_FUNC, 0));
 
     FILE *fp = fopen("circuit.txt", "rb");
