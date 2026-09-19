@@ -2184,11 +2184,12 @@ CircuitObj *Create_Circuit_Wrap(Context *context, CircuitObj *params, int count)
     return circuit_obj;
 }
 
-CircuitObj *Run_Wrap(Circuit *circuit, CircuitObj *params, int count)
+CircuitObj *Run_Wrap(Context *context, CircuitObj *params, int count)
 {
     CircuitObj *void_obj = malloc(sizeof(CircuitObj));
     void_obj->type = OBJ_VOID;
-    run_circuit(circuit);
+    Circuit *current_circuit = params->list.objs[0]->circuit;
+    run_circuit(current_circuit);
     return void_obj;
 }
 
@@ -2223,7 +2224,7 @@ int main(void)
     Context *context = create_context();
 
     append_sym_to_table(context, create_symbol("CIRCUIT", Create_Circuit_Wrap, SYM_FUNC, 0));
-    append_sym_to_table(context, create_symbol("OR", Or_Wrap, SYM_FUNC, 2));
+    append_sym_to_table(context, create_symbol("OR", Or_Wrap, SYM_FUNC, 3));
     append_sym_to_table(context, create_symbol("AND", And_Wrap, SYM_FUNC, 4));
     append_sym_to_table(context, create_symbol("NOT", Not_Wrap, SYM_FUNC, 3));
     append_sym_to_table(context, create_symbol("NOR", Nor_Wrap, SYM_FUNC, 4));

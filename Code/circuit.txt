@@ -1,9 +1,16 @@
-var circuit = CIRCUIT;
-var wire = WIRE circuit "test" 1 0;
-var a = WIRE circuit "a" 1 0;
-var b = WIRE circuit "b" 1 0;
+var circuit1 = CIRCUIT;
+var wire = WIRE circuit1 "test" 1 0;
+var a = WIRE circuit1 "a" 1 0;
+var b = WIRE circuit1 "b" 1 0;
 PRINT wire;
-var and = AND circuit wire a b;
+var and = AND circuit1 wire a b;
 PRINT and;
 PRINT 1+1;
 PRINT 5*6+3;
+RUN circuit1;
+
+var circuit2 = CIRCUIT;
+var or_a = WIRE circuit2 "2" 1 0;
+var or_b = WIRE circuit2 "4" 1 0;
+var or = OR circuit2 or_a or_b;
+RUN circuit2;
