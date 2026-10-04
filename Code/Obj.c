@@ -80,6 +80,15 @@ CircuitObj *create_tran_obj(char *name, int wires)
     return obj;
 }
 
+CircuitObj *create_gate_obj(char *name)
+{
+    CircuitObj *obj = create_obj();
+    obj->type = OBJ_GATE;
+    obj->gate = malloc(sizeof(Gate*));
+    *(obj->gate) = NULL;
+    return obj;
+}
+
 Symbol *create_symbol(char *name, void *data, SymType type, int param_count);
 
 CircuitObj *create_sym_obj(Symbol *sym)

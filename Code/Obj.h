@@ -10,6 +10,7 @@ CircuitObj *create_str_obj(int length);
 CircuitObj *create_list_obj();
 CircuitObj *create_wire_obj(Circuit *circuit, char *name, int power);
 CircuitObj *create_tran_obj(char *name, int wires);
+CircuitObj *create_gate_obj(char *name);
 CircuitObj *create_sym_obj(Symbol *sym);
 
 // --- Props (proprieta' tipo ".power", ".name" ecc.) ---

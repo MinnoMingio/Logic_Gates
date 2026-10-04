@@ -71,6 +71,44 @@ Transistor *create_transistor(char *name, int wires)
     return transistor;
 }
 
+Gate *create_gate(char *name, int type)
+{
+    Gate *gate = malloc(sizeof(*gate));
+
+    gate->type = type;
+    gate->name = strdup(name);
+    gate->a = NULL;
+    gate->b = NULL;
+    gate->count = 0;
+    gate->transistor_list = NULL;
+
+    gate->output = NULL;
+
+    return gate;
+}
+
+void append_t_to_g(Circuit *circuit, Gate *gate, Transistor *transistor)
+{
+    int length = gate->count;
+
+    gate->transistor_list = realloc(gate->transistor_list, sizeof(Transistor*) * (length + 1)); 
+    gate->transistor_list[length] = transistor;
+   
+    append_t_to_c(circuit, transistor); 
+    
+    gate->count++;
+}
+
+void append_g_to_g(Gate *gate_src, Gate *gate_to_add)
+{
+    int length = gate_src->count;
+
+    gate_src->gate_list = realloc(gate_src->gate_list, sizeof(Transistor*) * (length + 1)); 
+    gate_src->gate_list[length] = gate_to_add;
+    
+    gate_src->count++;
+}
+
 void update_transistor(Transistor *transistor, int state, int invert)
 {
     transistor->state = state;
@@ -119,6 +157,7 @@ void update_next_t(Circuit *circuit)
 
         for(int j = 0; j < transistor->count; j++)
         {
+            if(transistor->input_wire[j] == NULL) continue;
             int current_power = transistor->input_wire[j]->power + (transistor->invert ? (transistor->input_wire[j]->power ? -1 : 1) : 0);
 
             if (current_state == 1 && current_power == 1 && transistor->output_wire != NULL)
@@ -171,8 +210,9 @@ void run_circuit(Circuit *circuit)
     int tries = run_parallel_circuit(circuit, 100);
     printf("Tot tries: %d\n", tries);
 }
-Transistor *create_OR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
+Gate *create_OR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
 {
+    Gate *or_gate = create_gate("OR_Gate", 0);    
     Transistor *transistor1 = create_transistor("OR_1", 1);
     Transistor *transistor2 = create_transistor("OR_1", 1);
     
@@ -187,14 +227,18 @@ Transistor *create_OR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
     transistor2->input_wire[0] = b_wire;
     transistor2->output_wire = wire1_2;
 
-    append_t_to_c(circuit, transistor1);
-    append_t_to_c(circuit, transistor2);
+    append_t_to_g(circuit, or_gate, transistor1);
+    append_t_to_g(circuit, or_gate, transistor2);
 
-    return transistor2;
+    or_gate->a = a_wire;
+    or_gate->b = b_wire;
+    or_gate->output = wire1_2;
+    return or_gate;
 }
 
-Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
+Gate *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
 {
+    Gate *and_gate = create_gate("AND_Gate", 0);
     Transistor *transistor1 = create_transistor("AND_1", 1);
     Transistor *transistor2 = create_transistor("AND_2", 1);
     
@@ -212,14 +256,18 @@ Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b
     transistor2->output_wire = out;
     transistor2->control_wire = b;
 
-    append_t_to_c(circuit, transistor1);
-    append_t_to_c(circuit, transistor2);
+    append_t_to_g(circuit, and_gate, transistor1);
+    append_t_to_g(circuit, and_gate, transistor2);
 
-    return transistor2;
+    and_gate->a = a;
+    and_gate->b = b;
+    and_gate->output = out;
+    return and_gate;
 }
 
-Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire, Wire *output_wire)
+Gate *create_NOT_Gate(Circuit *circuit, Wire *input_wire, Wire *output_wire)
 {
+    Gate *not_gate = create_gate("NOT_Gate", 0);
     Transistor *transistor1 = create_transistor("NOT", 1);
     
     update_transistor(transistor1, 0, 1);
@@ -232,24 +280,36 @@ Transistor *create_NOT_Gate(Circuit *circuit, Wire *input_wire, Wire *output_wir
     transistor1->input_wire[0] = input_wire;
     transistor1->output_wire = output_wire;
 
-    append_t_to_c(circuit, transistor1);
+    append_t_to_g(circuit, not_gate, transistor1);
 
-    return transistor1;
+    not_gate->a = input_wire;
+    not_gate->output = output_wire;
+    return not_gate;
 }
 
-Transistor *create_NOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
+Gate *create_NOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
 {
-    Transistor *or_gate = create_OR_Gate(circuit, a_wire, b_wire);
-    return create_NOT_Gate(circuit, or_gate->output_wire, NULL);
+    Gate *nor_gate = create_gate("NOR_Gate", 1);
+    Gate *or_gate = create_OR_Gate(circuit, a_wire, b_wire);
+    Gate *not_or_gate = create_NOT_Gate(circuit, or_gate->output, NULL);
+
+    append_g_to_g(nor_gate, or_gate);    
+    append_g_to_g(nor_gate, not_or_gate);    
+    return nor_gate;
 }
 
-Transistor *create_NAND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
+Gate *create_NAND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b)
 {
-    Transistor *and_gate = create_AND_Gate(circuit, input_wire, a, b);
-    return create_NOT_Gate(circuit, and_gate->output_wire, NULL);
+    Gate *nand_gate = create_gate("NAND_Gate", 1);
+    Gate *and_gate = create_AND_Gate(circuit, input_wire, a, b);
+    Gate *not_and_gate = create_NOT_Gate(circuit, and_gate->output, NULL);
+
+    append_g_to_g(nand_gate, and_gate); 
+    append_g_to_g(nand_gate, not_and_gate); 
+    return nand_gate;
 }
 
-Transistor *create_XOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
+Gate *create_XOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
 {
     //quindi prende i due segnali (0,0) o (1,1) e in pratica (0, 0)
     //restituisce 1 mentre (1,1) restituisce zero. L'ultimo NOR
@@ -259,20 +319,25 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
     //comunque zero e allora all'ultimo NOR arrivano due zeri (0,0) e restituirà 1.
     //Quindi se sono diversi restituisce 1 mentre se sono uguali restituisce zero.
 
+    Gate *xor_gate = create_gate("XOR_Gate", 1);
     Wire *a = a_wire;
     Wire *b = b_wire;
     // Passo 1: Invertiamo i singoli segnali
-    Transistor *not_a_wire = create_NOT_Gate(circuit, a, NULL);
-    Transistor *not_b_wire = create_NOT_Gate(circuit, b, NULL);
+    Gate *not_a = create_NOT_Gate(circuit, a, NULL);
+    Gate *not_b = create_NOT_Gate(circuit, b, NULL);
+    append_g_to_g(xor_gate, not_a);
+    append_g_to_g(xor_gate, not_b);
 
     // Passo 2: NOR tra A e B (è vero solo se A=0 e B=0)
-    Transistor *nor_ab = create_NOR_Gate(circuit, a, b);
+    Gate *nor_ab = create_NOR_Gate(circuit, a, b);
+    append_g_to_g(xor_gate, nor_ab);
     
     // Passo 3: NOR tra NOT_A e NOT_B (è vero solo se A=1 e B=1)
     //Wire **not_a_b_wires = malloc(sizeof(Wire*) * 2); 
     //not_a_b_wires[0] = not_a_wire->output_wire;
     //not_a_b_wires[1] = not_b_wire->output_wire;
-    Transistor *nor_not_ab = create_NOR_Gate(circuit, not_a_wire->output_wire, not_b_wire->output_wire);
+    Gate *nor_not_ab = create_NOR_Gate(circuit, not_a->output, not_b->output);
+    append_g_to_g(xor_gate, nor_not_ab);
    
     //free(not_a_b_wires); 
     
@@ -282,10 +347,15 @@ Transistor *create_XOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire)
     //nor_ab_nor_not_ab[0] = nor_ab->output_wire;
     //nor_ab_nor_not_ab[1] = nor_not_ab->output_wire;
 
-    Transistor *xor = create_NOR_Gate(circuit, nor_ab->output_wire, nor_not_ab->output_wire);     
+    Gate *xor = create_NOR_Gate(circuit, nor_ab->output, nor_not_ab->output);     
     xor->name = "XOR";
+    append_g_to_g(xor_gate, xor);
     //free(nor_ab_nor_not_ab);
-    return xor;
+
+    xor_gate->a = a;
+    xor_gate->b = b;
+    xor_gate->output = xor->output;
+    return xor_gate;
 }
 
 void create_Half_Adder(Circuit *circuit, int input_a, int input_b)
@@ -309,10 +379,10 @@ void create_Half_Adder(Circuit *circuit, int input_a, int input_b)
     //inputs[1] = b;
 
     // 1. Somma: XOR tra A e B
-    Transistor *sum_gate = create_XOR_Gate(circuit, a, b);
+    Gate *sum_gate = create_XOR_Gate(circuit, a, b);
 
     // 2. Riporto: AND tra A e B (alimentata da VCC, controllata da A e B)
-    Transistor *carry_gate = create_AND_Gate(circuit, vcc, a, b);
+    Gate *carry_gate = create_AND_Gate(circuit, vcc, a, b);
 
     //free(inputs);
 }
@@ -324,7 +394,7 @@ void create_Clock_Cicle(Circuit *circuit)
     loop_wire->driven = 1; // Permettiamo al transistor di cambiarlo
 
     // 2. Creiamo una porta NOT che legge da loop_wire e scrive su loop_wire!
-    Transistor *not_gate = create_NOT_Gate(circuit, loop_wire, loop_wire);
+    Gate *not_gate = create_NOT_Gate(circuit, loop_wire, loop_wire);
 
     // Colleghiamo l'uscita del NOT direttamente al cavo di ingresso
     // Sorgente di alimentazione sempre attiva (VCC)
@@ -371,6 +441,36 @@ void add_wire_props(CircuitObj *circuitObj)
     power_prop->type = OBJ_INT;
     power_prop->i = &((*circuitObj->wire)->power);
     add_prop(circuitObj, power_prop, "power");
+}
+
+void add_gate_props(CircuitObj *circuitObj)
+{
+    CircuitObj *name_prop = create_obj();
+    name_prop->type = OBJ_STR;
+    name_prop->str = &((*circuitObj->gate)->name);
+    add_prop(circuitObj, name_prop, "name");
+
+    //CircuitObj *in_wire = create_list_obj();
+    CircuitObj *a_wire = create_obj();
+    a_wire->type = OBJ_WIRE;
+    a_wire->wire = NULL;
+    a_wire->wire = &((*circuitObj->gate)->a);
+    add_wire_props(a_wire);
+  
+    CircuitObj *b_wire = create_obj();
+    b_wire->type = OBJ_WIRE;
+    b_wire->wire = NULL;
+    b_wire->wire = &((*circuitObj->gate)->b);
+    add_wire_props(b_wire);
+    
+    add_prop(circuitObj, a_wire, "a");
+    add_prop(circuitObj, b_wire, "b");
+
+    CircuitObj *out_wire = create_obj();
+    out_wire->type = OBJ_WIRE;
+    out_wire->wire = &((*circuitObj->gate)->output);
+    add_prop(circuitObj, out_wire, "out");
+    add_wire_props(out_wire); 
 }
 
 void *add_tran_props(CircuitObj *circuitObj)
@@ -436,23 +536,22 @@ CircuitObj *Or_Wrap(Context *context, CircuitObj *params, int count)
     input_wires[1] = b_wire;
     */
     Circuit *current_circuit = params->list.objs[0]->circuit;
-    CircuitObj *circuitObj = create_tran_obj("OR_TRAN", 1);//malloc(sizeof(CircuitObj));
+    CircuitObj *or_gate_wrap = create_gate_obj("OR_Gate");
+    //CircuitObj *circuitObj = create_tran_obj("OR_TRAN", 1);//malloc(sizeof(CircuitObj));
     //Wire **wire_list = wires_by_params(circuit, params, count);
     Wire *a_wire = *params->list.objs[1]->wire;
     Wire *b_wire = *params->list.objs[2]->wire;
 
-    Transistor *or_gate = create_OR_Gate(current_circuit, a_wire, b_wire);
+    Gate *or_gate = create_OR_Gate(current_circuit, a_wire, b_wire);
+    *or_gate_wrap->gate = or_gate;
+    add_gate_props(or_gate_wrap);
 
-    circuitObj->type = OBJ_TRAN;
-    *circuitObj->transistor = or_gate;
-    add_tran_props(circuitObj);
-
-    return circuitObj;
+    return or_gate_wrap;
 }
 
 CircuitObj *And_Wrap(Context *context, CircuitObj *params, int count)
 {
-    CircuitObj *circuitObj = create_tran_obj("AND_TRAN", 1);
+    CircuitObj *and_gate_wrap = create_gate_obj("AND_Wrap");
     /*
     char *input_name = params->list.objs[0]->str;
     char *a_name = params->list.objs[1]->str;
@@ -480,85 +579,62 @@ CircuitObj *And_Wrap(Context *context, CircuitObj *params, int count)
     Wire *a_wire = *params->list.objs[2]->wire;
     Wire *b_wire = *params->list.objs[3]->wire;
 
-    Transistor *and_gate = create_AND_Gate(current_circuit, input_wire, a_wire, b_wire);
+    Gate *and_gate = create_AND_Gate(current_circuit, input_wire, a_wire, b_wire);
+    *and_gate_wrap->gate = and_gate;
+    add_gate_props(and_gate_wrap);
 
-    circuitObj->type = OBJ_TRAN;
-    *circuitObj->transistor = and_gate;
-    add_tran_props(circuitObj);
-
-    return circuitObj;
+    return and_gate_wrap;
 }
 
 CircuitObj *Not_Wrap(Context *context, CircuitObj *params, int count)
 {
-    CircuitObj *circuitObj = create_tran_obj("NOT_TRAN", 1);
+    CircuitObj *circuitObj = create_gate_obj("NOT_Gate");
     //Wire **wire_list = wires_by_params(circuit, params, count);
     Circuit *current_circuit = params->list.objs[0]->circuit;
     Wire *input_wire = *params->list.objs[1]->wire;
     Wire *output_wire = *params->list.objs[2]->wire;
 
-    Transistor *and_gate = create_NOT_Gate(current_circuit, input_wire, output_wire);
-
-    circuitObj->type = OBJ_TRAN;
-    *circuitObj->transistor = and_gate;
-    add_tran_props(circuitObj);
+    Gate *and_gate = create_NOT_Gate(current_circuit, input_wire, output_wire);
+    *circuitObj->gate = and_gate;
+    add_gate_props(circuitObj);
 
     return circuitObj;
 }
 
 CircuitObj *Nor_Wrap(Context *context, CircuitObj *params, int count)
 {
-    CircuitObj *circuitObj = create_tran_obj("NOR_TRAN", 1);
-    /*
-    Wire *a_wire = create_wire(circuit, params->list.objs[0]->str, 0);
-    Wire *b_wire = create_wire(circuit, params->list.objs[1]->str, 0);
-
-    Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
-    input_wires[0] = a_wire;
-    input_wires[1] = b_wire;
-    */
-
-    //Wire **wire_list = wires_by_params(circuit, params, count);
+    CircuitObj *circuitObj = create_gate_obj("NOR_Wrap");
+    
     Circuit *current_circuit = params->list.objs[0]->circuit;
     Wire *a_wire = *params->list.objs[1]->wire;
     Wire *b_wire = *params->list.objs[2]->wire;
 
-    Transistor *nor_gate = create_NOR_Gate(current_circuit, a_wire, b_wire);
-
-    circuitObj->type = OBJ_TRAN;
-    *circuitObj->transistor = nor_gate;
-    add_tran_props(circuitObj);
+    Gate *nor_gate = create_NOR_Gate(current_circuit, a_wire, b_wire);
+    *circuitObj->gate = nor_gate;
+    add_gate_props(circuitObj);
 
     return circuitObj;
 }
 
 CircuitObj *Nand_Wrap(Context *context, CircuitObj *params, int count)
 {
-    CircuitObj *circuitObj = create_tran_obj("NAND_TRAN", 1);
-    /*
-    Wire *input_wire = create_wire(circuit, params->list.objs[0]->str, 0);
-    Wire *a_wire = create_wire(circuit, params->list.objs[1]->str, 0);
-    Wire *b_wire = create_wire(circuit, params->list.objs[2]->str, 0);
-    */
+    CircuitObj *circuitObj = create_gate_obj("NAND_Gate");
 
-    //Wire **wire_list = wires_by_params(circuit, params, count);
     Circuit *current_circuit = params->list.objs[0]->circuit;
     Wire *input_wire = *params->list.objs[1]->wire;
     Wire *a_wire = *params->list.objs[2]->wire;
     Wire *b_wire = *params->list.objs[3]->wire;
 
-    Transistor *nand_gate = create_NAND_Gate(current_circuit, input_wire, a_wire, b_wire);
-
-    circuitObj->type = OBJ_TRAN;
-    *circuitObj->transistor = nand_gate;
-    add_tran_props(circuitObj);
+    Gate *nand_gate = create_NAND_Gate(current_circuit, input_wire, a_wire, b_wire);
+    *circuitObj->gate = nand_gate;
+    add_gate_props(circuitObj);
 
     return circuitObj;
 }
 
 CircuitObj *Xor_Wrap(Context *context, CircuitObj *params, int count)
 {
-    CircuitObj *circuitObj = create_tran_obj("XOR_TRAN", 1);
+    CircuitObj *circuitObj = create_gate_obj("XOR_Gate");
     
     printf("XOR params: %s e %s\n", params->list.objs[0]->str, params->list.objs[1]->str);
     if (params == NULL || params->list.count < 2)
@@ -567,27 +643,15 @@ CircuitObj *Xor_Wrap(Context *context, CircuitObj *params, int count)
                 params ? params->list.count : 0);
         return NULL;
     }
-
     printf("\n");
-    /* 
-    Wire *a_wire = create_wire(circuit, params->list.objs[0]->str, 0);
-    Wire *b_wire = create_wire(circuit, params->list.objs[1]->str, 0);
-
-    Wire **input_wires = create_wire_list(circuit, "or_wires", 0, 2);    
-    input_wires[0] = a_wire;
-    input_wires[1] = b_wire;
-    */
-
-    //Wire **wire_list = wires_by_params(circuit, params, count);
+    
     Circuit *current_circuit = params->list.objs[1]->circuit;
     Wire *a_wire = *params->list.objs[1]->wire;
     Wire *b_wire = *params->list.objs[2]->wire;
 
-    Transistor *xor_gate = create_XOR_Gate(current_circuit, a_wire, b_wire);
-
-    circuitObj->type = OBJ_TRAN;
-    *circuitObj->transistor = xor_gate;
-    add_tran_props(circuitObj);
+    Gate *xor_gate = create_XOR_Gate(current_circuit, a_wire, b_wire);
+    *circuitObj->gate = xor_gate;
+    add_gate_props(circuitObj);
 
     return circuitObj;
 }
@@ -707,7 +771,11 @@ CircuitObj *Print_Wrap(Context *context, CircuitObj *params, int count)
         }
         else if(obj->type == OBJ_TRAN)
         {
-            printf(">> GATE '%s' -> Out Power: %d\n", (*obj->transistor)->name, (*obj->transistor)->output_wire ? (*obj->transistor)->output_wire->power : -1);
+            printf(">> TRAN '%s' -> Out Power: %d\n", (*obj->transistor)->name, (*obj->transistor)->output_wire ? (*obj->transistor)->output_wire->power : -1);
+        }
+        else if(obj->type == OBJ_GATE)
+        {
+            printf(">> GATE '%s' -> Out Power: %d\n", (*obj->gate)->name, (*obj->gate)->output->power);
         }
         else if(obj->type == OBJ_STR)
         {

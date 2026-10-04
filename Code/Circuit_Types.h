@@ -12,22 +12,24 @@
 #define OBJ_STR   2
 #define OBJ_LIST  3
 #define OBJ_TRAN  4
-#define OBJ_WIRE  5
-#define OBJ_FUNC  6
-#define OBJ_VAR   7
-#define OBJ_OP    8
-#define OBJ_DOT   9
-#define OBJ_INDEX 10
-#define OBJ_BOOL  11
-#define OBJ_BLOCK 12
-#define OBJ_IF    13
-#define OBJ_VOID  14
+#define OBJ_GATE  5
+#define OBJ_WIRE  6
+#define OBJ_FUNC  7
+#define OBJ_VAR   8
+#define OBJ_OP    9
+#define OBJ_DOT   10
+#define OBJ_INDEX 11
+#define OBJ_BOOL  12
+#define OBJ_BLOCK 13
+#define OBJ_IF    14
+#define OBJ_VOID  15
 
 #define READ_ONLY  0
 #define READ_WRITE 1
 
 typedef struct Circuit Circuit;
 typedef struct Context Context;
+typedef struct Gate Gate;
 typedef struct Transistor Transistor;
 typedef struct Wire Wire;
 typedef struct Symbol Symbol;
@@ -67,6 +69,21 @@ typedef struct Transistor{
     int count;
 } Transistor;
 
+typedef struct Gate
+{
+    int type; // 0 usa trans e 1 usa gate
+    char *name;
+    Wire *a;
+    Wire *b;
+    Wire *output;
+    union 
+    {
+        Transistor **transistor_list;
+        struct Gate **gate_list;
+    };
+    int count;
+} Gate;
+
 typedef struct Operator
 {
     char *name;
@@ -95,6 +112,7 @@ typedef struct CircuitObj
         Operator *op;
         Wire **wire;
         Transistor **transistor;
+        Gate **gate;
         Circuit *circuit;
         struct List // sia per liste che per blocchi
         {
@@ -161,7 +179,16 @@ typedef struct Circuit{
     int wire_count;
 } Circuit;
 
+Circuit *create_circuit();
+void run_circuit(Circuit *circuit);
 Wire *create_wire(Circuit *circuit, char *name, int power);
 Transistor *create_transistor(char *name, int wires);
+Gate *create_gate(char *name, int type);
+Gate *create_OR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire);
+Gate *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b);
+Gate *create_NOT_Gate(Circuit *circuit, Wire *input_wire, Wire *output_wire);
+Gate *create_NOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire);
+Gate *create_NAND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b);
+Gate *create_XOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire);
 
 #endif // CIRCUIT_TYPES_H

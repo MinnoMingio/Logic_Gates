@@ -20,6 +20,7 @@ void print_transistors(Circuit *circuit);
 int run_parallel_circuit(Circuit *circuit, int max_count);
 void run_circuit(Circuit *circuit);
 
+/*
 // --- Porte logiche costruite con i transistor ---
 Transistor *create_OR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire);
 Transistor *create_AND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *b);
@@ -29,6 +30,7 @@ Transistor *create_NAND_Gate(Circuit *circuit, Wire *input_wire, Wire *a, Wire *
 Transistor *create_XOR_Gate(Circuit *circuit, Wire *a_wire, Wire *b_wire);
 void create_Half_Adder(Circuit *circuit, int input_a, int input_b);
 void create_Clock_Cicle(Circuit *circuit);
+*/
 
 // --- Ricerche ---
 Symbol *find_function_by_name(Circuit *circuit, char *name);
