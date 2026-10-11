@@ -213,9 +213,76 @@ Vector2 GetPinPos(CGate *g, int pin_a)
 /*  Disegno                                                            */
 /* ------------------------------------------------------------------ */
 
-void DrawGate(CGate *gate, int width, int height)
+// ---- Palette (tema scuro "neon") ----
+#define RGB(r, g, b) ((Color){(r), (g), (b), 255})
+
+#define COL_BG        RGB(15, 18, 32)     // sfondo
+#define COL_GRID      RGB(26, 31, 52)     // puntini della griglia
+#define COL_PANEL     RGB(22, 26, 46)     // barre in alto/in basso
+#define COL_PANEL_LN  RGB(46, 54, 88)     // bordo delle barre
+#define COL_TEXT      RGB(232, 235, 247)
+#define COL_TEXT_DIM  RGB(128, 137, 172)
+#define COL_WIRE_OFF  RGB(64, 73, 108)    // filo spento
+#define COL_WIRE_ON   RGB(232, 190, 90)   // filo acceso (giallo caldo)
+#define COL_PIN_IDLE  RGB(88, 98, 134)   // pin non collegato
+#define COL_SELECT    RGB(110, 160, 220)   // selezione / anteprima collegamento
+
+// Colore di ogni tipo di gate: ogni famiglia ha il suo tono.
+Color GateColor(GateType t)
 {
-    DrawRectangle(gate->position.x, gate->position.y, width, height, RED);
+    switch (t)
+    {
+    case VCC:  return RGB(214, 167, 69);   // ocra
+    case OR:   return RGB(84, 170, 160);   // verde acqua spento
+    case AND:  return RGB(140, 124, 200);  // lavanda
+    case NOT:  return RGB(200, 110, 150);  // rosa antico
+    case NOR:  return RGB(90, 150, 200);   // blu acciaio
+    case NAND: return RGB(170, 110, 190);  // malva
+    case XOR:  return RGB(200, 130, 80);   // rame
+    default:   return RGB(140, 150, 170);
+    }
+}
+
+// Mescola due colori: t = 0 -> a, t = 1 -> b
+Color Mix(Color a, Color b, float t)
+{
+    Color c;
+    c.r = (unsigned char)(a.r + (b.r - a.r) * t);
+    c.g = (unsigned char)(a.g + (b.g - a.g) * t);
+    c.b = (unsigned char)(a.b + (b.b - a.b) * t);
+    c.a = 255;
+    return c;
+}
+
+void DrawBackgroundGrid(int w, int h)
+{
+    for (int y = 56 + 16; y < h - 34; y += 32)
+        for (int x = 16; x < w; x += 32)
+            DrawRectangle(x, y, 2, 2, COL_GRID);
+}
+
+void DrawGate(CGate *gate, int width, int height, int hovered, int selected)
+{
+    int bx = gate->position.x;
+    int by = gate->position.y;
+    Color accent = GateColor(gate->gateType);
+
+    // corpo scuro appena tinto del colore del gate; bordo sottile
+    Color body_col = Mix(COL_BG, accent, hovered ? 0.30f : 0.22f);
+    Color border_col = selected ? COL_SELECT : Mix(COL_BG, accent, 0.55f);
+
+    // ombra discreta
+    DrawRectangle(bx + 3, by + 4, width, height, Fade(BLACK, 0.30f));
+
+    if (selected)
+        DrawRectangle(bx - 5, by - 5, width + 10, height + 10, Fade(COL_SELECT, 0.18f));
+
+    DrawRectangle(bx - 1, by - 1, width + 2, height + 2, border_col);
+    DrawRectangle(bx, by, width, height, body_col);
+
+    // barra d'accento a sinistra
+    DrawRectangle(bx, by, 3, height, accent);
+
     char *gate_text;
     switch (gate->gateType)
     {
@@ -228,10 +295,25 @@ void DrawGate(CGate *gate, int width, int height)
     case XOR:  gate_text = "XOR";  break;
     default:   gate_text = "NONE"; break;
     }
-    CVector2 center_position = GetTextCentered(gate->position.x, gate->position.y, width, height, gate_text, 20);
-    DrawText(gate_text, center_position.x, center_position.y, 20, BLACK);
+    CVector2 center_position = GetTextCentered(bx, by, width, height, gate_text, 18);
+    DrawText(gate_text, center_position.x, center_position.y, 18, COL_TEXT);
 }
 
+// Un filo: curva morbida, sottile; alone leggero se e' acceso.
+void DrawWire(Vector2 from, Vector2 to, int on)
+{
+    if (on)
+    {
+        DrawLineBezier(from, to, 8.0f, Fade(COL_WIRE_ON, 0.10f));
+        DrawLineBezier(from, to, 2.5f, COL_WIRE_ON);
+    }
+    else
+    {
+        DrawLineBezier(from, to, 2.5f, COL_WIRE_OFF);
+    }
+}
+
+// Solo i fili (da disegnare PRIMA dei gate, cosi' restano sotto).
 void DrawConnections(GateList *list)
 {
     for (int d = 0; d < list->count; d++)
@@ -242,10 +324,7 @@ void DrawConnections(GateList *list)
         for (int p = 0; p < pins; p++)
         {
             int pin_a = (p == 0);
-            Vector2 to = GetPinPos(dst, pin_a);
             Wire *w = GetPinWire(dst, pin_a);
-
-            DrawCircleV(to, 5, GRAY);
             if (w == NULL) continue;
 
             for (int s = 0; s < list->count; s++)
@@ -254,12 +333,65 @@ void DrawConnections(GateList *list)
                 if (src == dst) continue;
                 if (GetOutputWire(src) != w) continue;
 
-                Color c = w->power ? YELLOW : BLACK;
-                DrawLineV(GetOutputPos(src), to, c);
-                DrawCircleV(to, 6, c);
+                DrawWire(GetOutputPos(src), GetPinPos(dst, pin_a), w->power);
             }
         }
     }
+}
+
+// Pin di ingresso (con etichetta A/B) e porta di uscita di ogni gate.
+void DrawPorts(GateList *list)
+{
+    for (int i = 0; i < list->count; i++)
+    {
+        CGate *g = list->elms[i];
+        int pins = GetPinCount(g);
+
+        for (int p = 0; p < pins; p++)
+        {
+            int pin_a = (p == 0);
+            Vector2 pos = GetPinPos(g, pin_a);
+            Wire *w = GetPinWire(g, pin_a);
+
+            Color c = w ? (w->power ? COL_WIRE_ON : COL_WIRE_OFF) : COL_PIN_IDLE;
+            DrawRectangle((int)pos.x - 7, (int)pos.y - 7, 14, 14, COL_BG);
+            DrawRectangle((int)pos.x - 5, (int)pos.y - 5, 10, 10, c);
+
+            if (pins == 2)
+                DrawText(pin_a ? "A" : "B", (int)pos.x + 11, (int)pos.y - 5, 10, COL_TEXT_DIM);
+        }
+
+        Wire *out = GetOutputWire(g);
+        if (out)
+        {
+            Vector2 pos = GetOutputPos(g);
+            if (out->power)
+            {
+                DrawRectangle((int)pos.x - 13, (int)pos.y - 13, 26, 26, Fade(COL_WIRE_ON, 0.08f));
+                DrawRectangle((int)pos.x - 10, (int)pos.y - 10, 20, 20, Fade(COL_WIRE_ON, 0.14f));
+            }
+            DrawRectangle((int)pos.x - 7, (int)pos.y - 7, 14, 14, COL_BG);
+            DrawRectangle((int)pos.x - 5, (int)pos.y - 5, 10, 10, out->power ? COL_WIRE_ON : COL_WIRE_OFF);
+        }
+    }
+}
+
+// Barra in alto (titolo + modalita' pin) e barra in basso (comandi).
+void DrawHud(int pin_a, int w, int h)
+{
+    DrawRectangle(0, 0, w, 56, COL_PANEL);
+    DrawRectangle(0, 55, w, 1, COL_PANEL_LN);
+    DrawText("CIRCUIT LAB", 20, 15, 26, COL_TEXT);
+
+    Rectangle pill = {(float)(w - 200), 11, 180, 34};
+    Color pill_col = pin_a ? RGB(70, 110, 180) : RGB(140, 84, 160);
+    DrawRectangle((int)pill.x, (int)pill.y, (int)pill.width, (int)pill.height, pill_col);
+    DrawText(pin_a ? "COLLEGO SU: PIN A" : "COLLEGO SU: PIN B", (int)pill.x + 16, (int)pill.y + 10, 14, WHITE);
+
+    DrawRectangle(0, h - 34, w, 34, COL_PANEL);
+    DrawRectangle(0, h - 34, w, 1, COL_PANEL_LN);
+    DrawText("Click: collega  |  N / M: scegli pin  |  Shift+drag: sposta  |  C: simula  |  O: toggle uscita  |  dx: debug  |  centrale: scollega",
+             16, h - 23, 13, COL_TEXT_DIM);
 }
 
 /* ------------------------------------------------------------------ */
@@ -393,7 +525,8 @@ CGate *createGate(Circuit *circuit, GateList *gateList, char *name, GateType typ
 
 int main(void)
 {
-    InitWindow(1000, 800, "Circuit");
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
+    InitWindow(1000, 800, "Circuit Lab");
     SetTargetFPS(60);
 
     Circuit *circuit = create_circuit();
@@ -518,27 +651,29 @@ int main(void)
 
         // ------------------- disegno -------------------
         BeginDrawing();
-        ClearBackground(WHITE);
+        ClearBackground(COL_BG);
+        DrawBackgroundGrid(GetScreenWidth(), GetScreenHeight());
 
+        // fili sotto a tutto
+        DrawConnections(gateList);
+
+        // anteprima del collegamento in corso: dal gate sorgente al mouse
+        if (gate_clicked_first != NULL)
+            DrawLineBezier(GetOutputPos(gate_clicked_first), mouse, 2.5f, Fade(COL_SELECT, 0.85f));
+
+        // gate
         for (int i = 0; i < gateList->count; i++)
         {
             CGate *g = gateList->elms[i];
-            DrawGate(g, GATE_W, GATE_H);
-
-            if (g == gate_clicked_first)
-                DrawRectangleLines(g->position.x, g->position.y, GATE_W, GATE_H, BLUE);
-
-            Wire *wo = GetOutputWire(g);
-            if (wo)
-                DrawCircleV(GetOutputPos(g), 6, wo->power ? YELLOW : BLACK);
+            Rectangle rect = {(float)g->position.x, (float)g->position.y, GATE_W, GATE_H};
+            int hovered = CheckCollisionPointRec(mouse, rect);
+            DrawGate(g, GATE_W, GATE_H, hovered, g == gate_clicked_first);
         }
 
-        DrawConnections(gateList);
+        // pin e uscite sopra ai gate
+        DrawPorts(gateList);
 
-        DrawText(pin_a ? "Collego su: PIN A (N/M per cambiare)" : "Collego su: PIN B (N/M per cambiare)",
-                 10, 10, 20, DARKGRAY);
-        DrawText("Click: sorgente poi destinazione | Shift+drag: sposta | C: simula | O: toggle uscita | Click dx: debug | Click centrale: scollega",
-                 10, 35, 14, GRAY);
+        DrawHud(pin_a, GetScreenWidth(), GetScreenHeight());
 
         EndDrawing();
     }
