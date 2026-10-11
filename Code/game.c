@@ -1,5 +1,11 @@
-#include<raylib.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <raylib.h>
 #include "Circuit_Types.h"
+#include "Circuit.h"
+
+#define GATE_W 100
+#define GATE_H 50
 
 typedef enum
 {
@@ -23,6 +29,16 @@ typedef struct CGate
     GateType gateType;
     Gate *content;
     CVector2 position;
+
+    // Solo per NOR / NAND / XOR (gate composti): i loro ingressi sono "fissati"
+    // alla creazione su due wire interni (pin_net). Per collegarci un'altra uscita
+    // usiamo un transistor "buffer" (pin_buf) che copia il segnale sorgente sul wire
+    // interno. Indice 0 = pin A, indice 1 = pin B.
+    Wire *pin_net[2];
+    Transistor *pin_buf[2];
+
+    // Wire di uscita del gate (per TUTTI i tipi, composti inclusi).
+    Wire *out_wire;
 } CGate;
 
 typedef struct GateList
@@ -31,109 +47,339 @@ typedef struct GateList
     int count;
 } GateList;
 
-CGate *findGatebyOutputWire(CGate **gates, int count, Wire *wire)
-{
-    for(int i = 0; i < count; i++)
-    {
-        if(gates[i]->content->tran_a->input_wire[0] == wire || gates[i]->content->tran_b->input_wire[0] == wire)
-        {
-            return gates[i];
-        }
-    }
-    return NULL;
-}
+// Wire sempre a 0, usato al posto di NULL quando si scollega un pin
+// (cosi' il simulatore non trova mai puntatori NULL negli ingressi).
+static Wire *g_ground = NULL;
+
+/* ------------------------------------------------------------------ */
+/*  Helper                                                             */
+/* ------------------------------------------------------------------ */
 
 CVector2 GetTextCentered(int x, int y, int width, int height, char *text, int fontSize)
 {
     CVector2 center = {0, 0};
-    center.x = x + (width-MeasureText(text, fontSize))/2;
-    center.y = y + ((height-fontSize)/2);
+    center.x = x + (width - MeasureText(text, fontSize)) / 2;
+    center.y = y + ((height - fontSize) / 2);
     return center;
 }
+
+Wire *GetOutputWire(CGate *g)
+{
+    if (g == NULL) return NULL;
+    return g->out_wire;
+}
+
+Transistor *GetPinTransistor(CGate *g, int pin_a)
+{
+    if (g == NULL || g->content == NULL) return NULL;
+    return pin_a ? g->content->tran_a : g->content->tran_b;
+}
+
+int IsComposite(CGate *g)
+{
+    return g->gateType == NOR || g->gateType == NAND || g->gateType == XOR;
+}
+
+// Wire attualmente collegato al pin (NULL = scollegato).
+//  - OR / NOT        : input_wire[0] del transistor del pin
+//  - AND             : control_wire del transistor del pin
+//  - NOR/NAND/XOR    : ingresso del buffer di quel pin
+Wire *GetPinWire(CGate *g, int pin_a)
+{
+    Wire *w = NULL;
+    int idx = pin_a ? 0 : 1;
+
+    if (IsComposite(g))
+    {
+        if (g->pin_buf[idx] != NULL && g->pin_buf[idx]->input_wire != NULL)
+            w = g->pin_buf[idx]->input_wire[0];
+    }
+    else
+    {
+        Transistor *t = GetPinTransistor(g, pin_a);
+        if (t != NULL)
+        {
+            if (g->gateType == OR)
+            {
+                if (t->input_wire) w = t->input_wire[0];
+            }
+            else if (g->gateType == NOT)
+            {
+                if (pin_a && t->input_wire) w = t->input_wire[0];
+            }
+            else if (g->gateType == AND)
+            {
+                w = t->control_wire;
+            }
+        }
+    }
+
+    if (w == g_ground) return NULL;
+    return w;
+}
+
+int GetPinCount(CGate *g)
+{
+    switch (g->gateType)
+    {
+    case OR:
+    case AND:
+    case NOR:
+    case NAND:
+    case XOR: return 2;
+    case NOT: return 1;
+    default:  return 0;
+    }
+}
+
+// Scrive il wire nel punto GIUSTO per il tipo di gate (w = NULL scollega).
+void SetPinWire(Circuit *circuit, CGate *g, int pin_a, Wire *w)
+{
+    Wire *value = w ? w : g_ground;
+
+    if (IsComposite(g))
+    {
+        int idx = pin_a ? 0 : 1;
+        if (g->pin_net[idx] == NULL)
+        {
+            printf("pin non disponibile su questo gate\n");
+            return;
+        }
+
+        // il buffer si crea la prima volta che serve e poi si riusa
+        if (g->pin_buf[idx] == NULL)
+        {
+            Transistor *buf = create_transistor("BUF", 1);
+            update_transistor(buf, 1, 0);          // sempre "aperto", non invertente
+            buf->output_wire = g->pin_net[idx];    // scrive sul wire interno del gate
+            append_t_to_c(circuit, buf);
+            g->pin_buf[idx] = buf;
+        }
+        g->pin_buf[idx]->input_wire[0] = value;
+        return;
+    }
+
+    Transistor *t = GetPinTransistor(g, pin_a);
+    if (t == NULL)
+    {
+        printf("pin non disponibile su questo gate\n");
+        return;
+    }
+
+    switch (g->gateType)
+    {
+    case OR:
+        if (t->input_wire) t->input_wire[0] = value;
+        break;
+    case NOT:
+        if (pin_a) { if (t->input_wire) t->input_wire[0] = value; }
+        else printf("il NOT ha un solo ingresso (pin A)\n");
+        break;
+    case AND:
+        t->control_wire = w;
+        if (w == NULL) t->state = 0;
+        break;
+    default:
+        printf("questo gate non ha ingressi collegabili\n");
+        break;
+    }
+}
+
+void ConnectGate(Circuit *circuit, CGate *src, CGate *dst, int pin_a)
+{
+    Wire *w = GetOutputWire(src);
+    if (w == NULL)
+    {
+        printf("il gate sorgente non ha un'uscita\n");
+        return;
+    }
+    SetPinWire(circuit, dst, pin_a, w);
+}
+
+Vector2 GetOutputPos(CGate *g)
+{
+    Vector2 p = {(float)(g->position.x + GATE_W), (float)(g->position.y + GATE_H / 2)};
+    return p;
+}
+
+Vector2 GetPinPos(CGate *g, int pin_a)
+{
+    float y = (GetPinCount(g) == 1) ? GATE_H / 2.0f : (pin_a ? GATE_H * 0.25f : GATE_H * 0.75f);
+    Vector2 p = {(float)g->position.x, g->position.y + y};
+    return p;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Disegno                                                            */
+/* ------------------------------------------------------------------ */
 
 void DrawGate(CGate *gate, int width, int height)
 {
     DrawRectangle(gate->position.x, gate->position.y, width, height, RED);
     char *gate_text;
-    int length = 0;
     switch (gate->gateType)
     {
-    case VCC:
-        gate_text = "VCC";
-        break;
-    case OR:
-        gate_text = "OR";
-        break;
-    case AND:
-        gate_text = "AND";
-        break;
-    case NOT:
-        gate_text = "NOT";
-        break;
-    case NOR:
-        gate_text = "NOR";
-        break;
-    case NAND:
-        gate_text = "NAND";
-        break;
-    case XOR:
-        gate_text = "XOR";
-        break;
-    default:
-        gate_text = "NONE";
-        break;
+    case VCC:  gate_text = "VCC";  break;
+    case OR:   gate_text = "OR";   break;
+    case AND:  gate_text = "AND";  break;
+    case NOT:  gate_text = "NOT";  break;
+    case NOR:  gate_text = "NOR";  break;
+    case NAND: gate_text = "NAND"; break;
+    case XOR:  gate_text = "XOR";  break;
+    default:   gate_text = "NONE"; break;
     }
     CVector2 center_position = GetTextCentered(gate->position.x, gate->position.y, width, height, gate_text, 20);
     DrawText(gate_text, center_position.x, center_position.y, 20, BLACK);
-
-    
 }
+
+void DrawConnections(GateList *list)
+{
+    for (int d = 0; d < list->count; d++)
+    {
+        CGate *dst = list->elms[d];
+        int pins = GetPinCount(dst);
+
+        for (int p = 0; p < pins; p++)
+        {
+            int pin_a = (p == 0);
+            Vector2 to = GetPinPos(dst, pin_a);
+            Wire *w = GetPinWire(dst, pin_a);
+
+            DrawCircleV(to, 5, GRAY);
+            if (w == NULL) continue;
+
+            for (int s = 0; s < list->count; s++)
+            {
+                CGate *src = list->elms[s];
+                if (src == dst) continue;
+                if (GetOutputWire(src) != w) continue;
+
+                Color c = w->power ? YELLOW : BLACK;
+                DrawLineV(GetOutputPos(src), to, c);
+                DrawCircleV(to, 6, c);
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Lista gate / creazione                                             */
+/* ------------------------------------------------------------------ */
 
 void appendGate(GateList *list, CGate *gate)
 {
     int length = list->count;
-    list->elms = realloc(list->elms, sizeof(CGate*) * (length+1));
+    list->elms = realloc(list->elms, sizeof(CGate *) * (length + 1));
     list->elms[length] = gate;
     list->count++;
+}
+
+// Uscita di un gate "semplice" (OR / AND / NOT) creato da Circuit.c.
+static Wire *SubOut(Gate *g)
+{
+    if (g == NULL || g->output_trans == NULL) return NULL;
+    return g->output_trans->output_wire;
+}
+
+// NOR = OR seguito da NOT. Ritorna il wire di uscita.
+static Wire *BuildNor(Circuit *circuit, Wire *a, Wire *b)
+{
+    Gate *or_g = create_OR_Gate(circuit, a, b);
+    Gate *not_g = create_NOT_Gate(circuit, SubOut(or_g), NULL);
+    return SubOut(not_g);
 }
 
 CGate *createGate(Circuit *circuit, GateList *gateList, char *name, GateType type)
 {
     CGate *gate = malloc(sizeof(CGate));
-    Wire *input = create_wire(circuit, "input", 0);
-    Wire *a = create_wire(circuit, "a", 0);
-    Wire *b = create_wire(circuit, "b", 0);
-    
+    gate->pin_net[0] = gate->pin_net[1] = NULL;
+    gate->pin_buf[0] = gate->pin_buf[1] = NULL;
+    gate->out_wire = NULL;
+    gate->content = NULL;
+
     switch (type)
     {
     case VCC:
+    {
         gate->content = create_gate("VCC_Gate", 0);
-        gate->content->output_trans->output_wire = create_wire(circuit, "VCC_Wire", 1);
-        gate->content->output_trans->output_wire->driven = 0;
+        gate->out_wire = create_wire(circuit, "VCC_Wire", 1);
+        gate->out_wire->driven = 0;
         break;
+    }
     case OR:
+    {
+        Wire *a = create_wire(circuit, "or_a", 0);
+        Wire *b = create_wire(circuit, "or_b", 0);
         gate->content = create_OR_Gate(circuit, a, b);
+        gate->out_wire = SubOut(gate->content);
         break;
+    }
     case AND:
-        gate->content = create_AND_Gate(circuit, input, a, b);
+    {
+        Wire *power = create_wire(circuit, "and_power", 1);
+        power->driven = 0;
+        Wire *a = create_wire(circuit, "and_a", 0);
+        Wire *b = create_wire(circuit, "and_b", 0);
+        gate->content = create_AND_Gate(circuit, power, a, b);
+        gate->out_wire = SubOut(gate->content);
         break;
+    }
     case NOT:
-        gate->content = create_NOT_Gate(circuit, input, NULL);
+    {
+        Wire *in = create_wire(circuit, "not_in", 0);
+        gate->content = create_NOT_Gate(circuit, in, NULL);
+        gate->out_wire = SubOut(gate->content);
         break;
+    }
     case NOR:
-        gate->content = create_NOR_Gate(circuit, a, b);
+    {
+        // costruito qui a mano (OR + NOT) cosi' conosciamo con certezza il wire di uscita
+        Wire *a = create_wire(circuit, "nor_a", 0);
+        Wire *b = create_wire(circuit, "nor_b", 0);
+        gate->pin_net[0] = a;
+        gate->pin_net[1] = b;
+        gate->content = create_gate("NOR_Gate", 1);
+        gate->out_wire = BuildNor(circuit, a, b);
         break;
+    }
     case NAND:
-        gate->content = create_NAND_Gate(circuit, input, a, b);
+    {
+        // AND + NOT
+        Wire *power = create_wire(circuit, "nand_power", 1);
+        power->driven = 0;
+        Wire *a = create_wire(circuit, "nand_a", 0);
+        Wire *b = create_wire(circuit, "nand_b", 0);
+        gate->pin_net[0] = a;
+        gate->pin_net[1] = b;
+        gate->content = create_gate("NAND_Gate", 1);
+        Gate *and_g = create_AND_Gate(circuit, power, a, b);
+        Gate *not_g = create_NOT_Gate(circuit, SubOut(and_g), NULL);
+        gate->out_wire = SubOut(not_g);
         break;
+    }
     case XOR:
-        gate->content = create_XOR_Gate(circuit, a, b);
+    {
+        // stessa struttura di prima: NOR( NOR(a,b), NOR(not a, not b) )
+        Wire *a = create_wire(circuit, "xor_a", 0);
+        Wire *b = create_wire(circuit, "xor_b", 0);
+        gate->pin_net[0] = a;
+        gate->pin_net[1] = b;
+        gate->content = create_gate("XOR_Gate", 1);
+
+        Wire *not_a = SubOut(create_NOT_Gate(circuit, a, NULL));
+        Wire *not_b = SubOut(create_NOT_Gate(circuit, b, NULL));
+        Wire *nor_ab = BuildNor(circuit, a, b);
+        Wire *nor_not_ab = BuildNor(circuit, not_a, not_b);
+        gate->out_wire = BuildNor(circuit, nor_ab, nor_not_ab);
         break;
+    }
     default:
         break;
     }
-    
-    //gate->content = create_transistor(name, 2);
+
+    if (gate->out_wire == NULL)
+        printf("ATTENZIONE: gate '%s' senza wire di uscita (output_trans non impostato?)\n", name);
+
     gate->gateType = type;
     gate->position.x = 0;
     gate->position.y = 0;
@@ -141,14 +387,22 @@ CGate *createGate(Circuit *circuit, GateList *gateList, char *name, GateType typ
     return gate;
 }
 
+/* ------------------------------------------------------------------ */
+/*  main                                                               */
+/* ------------------------------------------------------------------ */
+
 int main(void)
 {
     InitWindow(1000, 800, "Circuit");
+    SetTargetFPS(60);
 
     Circuit *circuit = create_circuit();
     GateList *gateList = malloc(sizeof(GateList));
     gateList->elms = NULL;
     gateList->count = 0;
+
+    g_ground = create_wire(circuit, "ground", 0);
+    g_ground->driven = 0;
 
     CGate *vcc_a_gate = createGate(circuit, gateList, "vcc_a_gate", VCC);
     vcc_a_gate->position.x = 100;
@@ -156,6 +410,7 @@ int main(void)
     CGate *vcc_b_gate = createGate(circuit, gateList, "vcc_b_gate", VCC);
     vcc_b_gate->position.x = 100;
     vcc_b_gate->position.y = 600;
+
     CGate *gate1 = createGate(circuit, gateList, "gate1", NOT);
     gate1->position.x = 500;
     gate1->position.y = 500;
@@ -165,140 +420,129 @@ int main(void)
     CGate *gate3 = createGate(circuit, gateList, "gate3", AND);
     gate3->position.x = 600;
     gate3->position.y = 200;
-    CGate *gate4 = createGate(circuit, gateList, "gate4", XOR);
+    CGate *gate4 = createGate(circuit, gateList, "gate4", NOR);
     gate4->position.x = 800;
-    gate4->position.y = 200;
+    gate4->position.y = 100;
+    CGate *gate5 = createGate(circuit, gateList, "gate5", NAND);
+    gate5->position.x = 800;
+    gate5->position.y = 250;
+    CGate *gate6 = createGate(circuit, gateList, "gate6", XOR);
+    gate6->position.x = 800;
+    gate6->position.y = 400;
+    (void)gate1; (void)gate2; (void)gate3; (void)gate4; (void)gate5; (void)gate6;
 
-    vcc_a_gate->content->output_trans->output_wire->power = 1;
-    int tran_a = 1;
+    GetOutputWire(vcc_a_gate)->power = 1;
+    GetOutputWire(vcc_b_gate)->power = 0;
+
+    int pin_a = 1;
     CGate *gate_clicked_first = NULL;
-    CGate *gate_clicked_second = NULL;
-    while(!WindowShouldClose())
-    {
-        BeginDrawing();
-        ClearBackground(WHITE);
 
-        if(IsKeyPressed(KEY_C))
+    while (!WindowShouldClose())
+    {
+        // ------------------- tastiera -------------------
+        if (IsKeyPressed(KEY_C))
         {
             run_circuit(circuit);
             printf("compiled!\n");
         }
-        else if(IsKeyPressed(KEY_N))
+        else if (IsKeyPressed(KEY_N))
         {
-            printf("NOW ON TRAN A\n");
-            tran_a = 1;
-        }else if(IsKeyPressed(KEY_M))
+            printf("NOW ON PIN A\n");
+            pin_a = 1;
+        }
+        else if (IsKeyPressed(KEY_M))
         {
-            printf("NOW ON TRAN B\n");
-            tran_a = 0;
+            printf("NOW ON PIN B\n");
+            pin_a = 0;
         }
 
-        //findGatebyOutputWire()
-        
-        /*
-        if(IsKeyDown(KEY_ONE))
-        {
-            gate->gateType = OR;
-        }else if(IsKeyDown(KEY_ONE))
-        {
-            gate->gateType = AND;
-        }else if(IsKeyDown(KEY_TWO))
-        {
-            gate->gateType = AND;
-        }else if(IsKeyDown(KEY_THREE))
-        {
-            gate->gateType = NOT;
-        }
-        */
-        for(int i = 0; i < gateList->count; i++)
-        {
-            CGate *current_gate = gateList->elms[i];
-            if(current_gate != NULL) DrawGate(current_gate, 100, 50);
-            
-            Wire *out_wire = current_gate->content->output_trans->output_wire;
+        // ------------------- mouse -------------------
+        Vector2 mouse = GetMousePosition();
+        int shift = IsKeyDown(KEY_LEFT_SHIFT);
 
-            CGate *output_gate = findGatebyOutputWire(gateList->elms, gateList->count, out_wire);
-            if (output_gate != NULL)
+        for (int i = 0; i < gateList->count; i++)
+        {
+            CGate *g = gateList->elms[i];
+            Rectangle rect = {(float)g->position.x, (float)g->position.y, GATE_W, GATE_H};
+            if (!CheckCollisionPointRec(mouse, rect)) continue;
+
+            if (shift && IsMouseButtonDown(MOUSE_BUTTON_LEFT))
             {
-                if(output_gate->content->type == 1)
-                {
-                }
-                Color lineColor = BLACK;
-                if(output_gate->content->tran_a != NULL && output_gate->content->tran_a->input_wire[0] != NULL)
-                {
-                    lineColor = output_gate->content->tran_a->input_wire[0]->power == 0 ? RED : YELLOW;
-                    DrawLine(output_gate->position.x, output_gate->position.y, current_gate->position.x+100, 15 + current_gate->position.y + (20), lineColor);
-                }else if(output_gate->content->tran_b != NULL && output_gate->content->tran_b->input_wire[0] != NULL)
-                {
-                    lineColor = output_gate->content->tran_b->input_wire[0]->power == 0 ? RED : YELLOW;
-                    DrawLine(output_gate->position.x, output_gate->position.y, current_gate->position.x+100, 20 + current_gate->position.y + (20), lineColor);
-                }
-                Vector2 point = {current_gate->position.x+100, 15 + current_gate->position.y + (20)};
-                DrawCircleV(point, 6, lineColor); // 'to' = l'endpoint verso cui va la linea
+                g->position.x = (int)mouse.x - GATE_W / 2;
+                g->position.y = (int)mouse.y - GATE_H / 2;
             }
-
-            Rectangle rect = {current_gate->position.x, current_gate->position.y, 100, 50};
-            if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            else if (!shift && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             {
-                if((gate_clicked_first != NULL && gate_clicked_second != NULL && gate_clicked_first != gate_clicked_second) || (gate_clicked_first == NULL || gate_clicked_second == NULL))
+                if (gate_clicked_first == NULL)
                 {
-                    if (gate_clicked_first == NULL)
-                    {
-                        gate_clicked_first = current_gate;
-                        printf("A\n");
-                    }else
-                    {
-                        gate_clicked_second = current_gate;
-                        printf("B\n");
-                    }
-                    
-                    if (gate_clicked_first != NULL && gate_clicked_second != NULL)
-                    {
-                        printf("COUPLED\n");
-                        printf("%s\n", gate_clicked_first->content->name);
-                        printf("%s\n", gate_clicked_second->content->name);
-
-                        //gate_clicked_first->content->output_trans->output_wire = gate_clicked_second->content->tran_a->input_wire[0];
-                        if(tran_a == 1)
-                        {
-                            gate_clicked_second->content->tran_a->input_wire[0] = gate_clicked_first->content->output_trans->output_wire;
-                            if (gate_clicked_second->gateType == AND)
-                            {
-                                gate_clicked_second->content->tran_a->control_wire = gate_clicked_first->content->output_trans->output_wire;
-                            }
-                            
-                        }else
-                        {
-                            gate_clicked_second->content->tran_b->input_wire[0] = gate_clicked_first->content->output_trans->output_wire;
-                            if (gate_clicked_second->gateType == AND)
-                            {
-                                gate_clicked_second->content->tran_b->control_wire = gate_clicked_first->content->output_trans->output_wire;
-                            }
-                        }
-
-                        gate_clicked_first = NULL;
-                        gate_clicked_second = NULL;
-                    }
+                    gate_clicked_first = g;
+                }
+                else if (gate_clicked_first != g)
+                {
+                    ConnectGate(circuit, gate_clicked_first, g, pin_a);
+                    gate_clicked_first = NULL;
                 }
             }
-            else if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
+            else if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
             {
-                printf("IN_A: %d, IN_B: %d, OUT: %d\n", current_gate->content->tran_a->input_wire[0]->power, current_gate->content->tran_b->input_wire[0]->power, current_gate->content->output_trans->output_wire->power);
-            }else if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE))
+                Wire *wa = GetPinWire(g, 1);
+                Wire *wb = GetPinWire(g, 0);
+                Wire *wo = GetOutputWire(g);
+                printf("IN_A: %d, IN_B: %d, OUT: %d\n",
+                       wa ? wa->power : -1,
+                       wb ? wb->power : -1,
+                       wo ? wo->power : -1);
+            }
+            else if (IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE))
             {
-                CGate *input_gate = findGatebyOutputWire(gateList->elms, gateList->count, current_gate->content->output_trans->output_wire);
-                if(tran_a == 1)
-                input_gate->content->tran_a->input_wire[0] = NULL;
-                else
-                input_gate->content->tran_b->input_wire[0] = NULL;
-            }else if (CheckCollisionPointRec(GetMousePosition(), rect) && IsKeyPressed(KEY_O))
+                SetPinWire(circuit, g, pin_a, NULL);
+            }
+            else if (IsKeyPressed(KEY_O))
             {
-                current_gate->content->output_trans->output_wire->power = !current_gate->content->output_trans->output_wire->power;
+                Wire *wo = GetOutputWire(g);
+                if (wo) wo->power = !wo->power;
             }
         }
-        
+
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !shift)
+        {
+            int on_gate = 0;
+            for (int i = 0; i < gateList->count; i++)
+            {
+                CGate *g = gateList->elms[i];
+                Rectangle rect = {(float)g->position.x, (float)g->position.y, GATE_W, GATE_H};
+                if (CheckCollisionPointRec(mouse, rect)) { on_gate = 1; break; }
+            }
+            if (!on_gate) gate_clicked_first = NULL;
+        }
+
+        // ------------------- disegno -------------------
+        BeginDrawing();
+        ClearBackground(WHITE);
+
+        for (int i = 0; i < gateList->count; i++)
+        {
+            CGate *g = gateList->elms[i];
+            DrawGate(g, GATE_W, GATE_H);
+
+            if (g == gate_clicked_first)
+                DrawRectangleLines(g->position.x, g->position.y, GATE_W, GATE_H, BLUE);
+
+            Wire *wo = GetOutputWire(g);
+            if (wo)
+                DrawCircleV(GetOutputPos(g), 6, wo->power ? YELLOW : BLACK);
+        }
+
+        DrawConnections(gateList);
+
+        DrawText(pin_a ? "Collego su: PIN A (N/M per cambiare)" : "Collego su: PIN B (N/M per cambiare)",
+                 10, 10, 20, DARKGRAY);
+        DrawText("Click: sorgente poi destinazione | Shift+drag: sposta | C: simula | O: toggle uscita | Click dx: debug | Click centrale: scollega",
+                 10, 35, 14, GRAY);
+
         EndDrawing();
     }
 
     CloseWindow();
+    return 0;
 }
