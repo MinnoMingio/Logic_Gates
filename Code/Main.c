@@ -1,3 +1,4 @@
+//gcc -g main.c Circuit.c Obj.c Parser.c -o main.exe
 // main.c
 // Punto di ingresso: registra le funzioni del circuito nella symbol table,
 // legge circuit.txt, lo parsa e lo esegue.
