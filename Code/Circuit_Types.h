@@ -63,9 +63,9 @@ typedef struct Transistor{
     char *name;
     int state; // if it's closed or open
     int invert;
-    struct Wire **input_wire;
-    struct Wire *output_wire;
-    struct Wire *control_wire;
+    Wire **input_wire;
+    Wire *output_wire;
+    Wire *control_wire;
     int count;
 } Transistor;
 
@@ -73,9 +73,9 @@ typedef struct Gate
 {
     int type; // 0 usa trans e 1 usa gate
     char *name;
-    Wire *a;
-    Wire *b;
-    Wire *output;
+    Transistor *tran_a;
+    Transistor *tran_b;
+    Transistor *output_trans;
     union 
     {
         Transistor **transistor_list;
